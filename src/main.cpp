@@ -2,15 +2,15 @@
 #include <iostream>
 #include <iomanip>
 // hardcoding
-const int cx[9] = { 0, 1,-1, 0, 0, 1,-1,-1, 1};
+const int cx[9] = { 0, 1,-1, 0, 0, 1,-1,-1, 1}; // for cuda chang the "const" to "constexpr"
 const int cy[9] = { 0, 0, 0, 1,-1, 1, 1,-1,-1};
 const double w[9] = {4./9, 1./9, 1./9, 1./9, 1./9,
                      1./36,1./36,1./36,1./36};
 
 const int opp[9] = {0, 2, 1, 4, 3, 6, 5, 8, 7};
 
-const int Nx = 100;
-const int Ny = 100;
+const int Nx = 15;
+const int Ny = 10;
 
 int main(int argc, char** argv){
 
@@ -18,10 +18,10 @@ int main(int argc, char** argv){
     {
         // distribution function
         Kokkos::View<double***>f("f", Nx, Ny, 9);
-
+        // for streaming
+        Kokkos::View<double***>f_new("f_new", Nx, Ny, 9);
         // density
         Kokkos::View<double**>rho("rho", Nx, Ny);
-
         // velocity
         Kokkos::View<double***>u("u", Nx, Ny, 2);
     }
@@ -29,7 +29,7 @@ int main(int argc, char** argv){
     return 0;
 }
 
-void computeDensity(Kokkos::View<double***> f, Kokkos::View<double**> rho, int Nx, int Ny){
+void computeDensity(Kokkos::View<double***> f, Kokkos::View<double**> rho){
         auto f_loc = f; // behaves like pointer so the real f is modified
         auto rho_loc = rho;
         Kokkos::parallel_for(Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0,0}, {Nx,Ny}),
@@ -43,7 +43,7 @@ void computeDensity(Kokkos::View<double***> f, Kokkos::View<double**> rho, int N
 }
 
 void computeVelocity(Kokkos::View<double***> f, Kokkos::View<double**> rho,
-                     Kokkos::View<double***> u, int Nx, int Ny){
+                     Kokkos::View<double***> u){
         auto f_loc = f;
         auto rho_loc = rho;
         auto u_loc = u;
@@ -60,9 +60,24 @@ void computeVelocity(Kokkos::View<double***> f, Kokkos::View<double**> rho,
     });
 }
 
+void streaming(Kokkos::View<double***> f, Kokkos::View<double***> f_new) {
+    auto f_loc = f;
+    auto f_new_loc = f_new;
+    Kokkos::parallel_for(Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0,0}, {Nx,Ny}),
+        KOKKOS_LAMBDA(int x, int y) {
+        for (int q = 0; q<9; q++) {
+            int x_new = (x + cx[q] + Nx) % Nx;
+            int y_new = (y + cy[q] + Ny) % Ny;
+            f_new(x_new, y_new, q) = f(x, y, q);
+        }
+    });
+    auto temp = f_loc;
+    f_loc = f_new;
+    f_new = temp;
+}
 
 
-// calcutating Pi with the Newton Method
+// calculating Pi with the Newton Method
 int newtonPi(int argc, char** argv, int N) {
     double sum = 0.0;
 
