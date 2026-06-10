@@ -27,11 +27,10 @@ int main(int argc, char** argv){
         Kokkos::View<double**>rho("rho", Nx, Ny);
         // velocity
         Kokkos::View<double***>u("u", Nx, Ny, 2);
-    for (rint i = 0; i < N; i++) {
+    for (int i = 0; i < N; i++) {
         computeDensity(f, rho);
         computeVelocity(f, rho, u);
-        computeEquilibrium(f, f_eq);
-        collision();
+        collision(f, rho, u);
         streaming(f, f_new);
 
     }
@@ -87,7 +86,7 @@ void streaming(Kokkos::View<double***> f, Kokkos::View<double***> f_new) {
     f_new = temp;
 }
 
-void computeEquilibrium(Kokkos::View<double***> f, Kokkos::View<double**> rho, Kokkos::View<double***> u, double tau) {
+void collision(Kokkos::View<double***> f, Kokkos::View<double**> rho, Kokkos::View<double***> u, double tau) {
     auto f_loc   = f;
     auto rho_loc = rho;
     auto u_loc   = u;
@@ -102,14 +101,6 @@ void computeEquilibrium(Kokkos::View<double***> f, Kokkos::View<double**> rho, K
             double f_eq = w[q] * rho * (1.0 + 3.0*cu + 4.5*cu*cu - 1.5*udotu);
             f_loc(x, y, q) += -(f_loc(x, y, q) - f_eq) / tau;
         }
-    });
-}
-
-void collison(Kokkos::View<double***> f) {
-// it is completely local on cell level
-    Kokkos::parallel_for(Kokkos::MDRangePolicy({0,0},{Nx,Ny}),
-        KOKKOS_LAMBDA(int x, int y) {
-
     });
 }
 
