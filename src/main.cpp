@@ -1,6 +1,7 @@
 #include <Kokkos_Core.hpp>
 #include <iostream>
 #include <iomanip>
+#include <fstream>
 // hardcoding
 const int cx[9] = { 0, 1,-1, 0, 0, 1,-1,-1, 1}; // for cuda chang the "const" to "constexpr"
 const int cy[9] = { 0, 0, 0, 1,-1, 1, 1,-1,-1};
@@ -76,6 +77,30 @@ void streaming(Kokkos::View<double***> f, Kokkos::View<double***> f_new) {
     f_new = temp;
 }
 
+void writeOutput(Kokkos::View<double**> rho, Kokkos::View<double***> u,
+                 int Nx, int Ny, int step) {
+
+    // copy to host first
+    auto rho_host = Kokkos::create_mirror_view(rho);
+    auto u_host   = Kokkos::create_mirror_view(u);
+    Kokkos::deep_copy(rho_host, rho);
+    Kokkos::deep_copy(u_host, u);
+
+    // filename includes step number
+    std::string filename = "output_" + std::to_string(step) + ".csv";
+    std::ofstream file(filename);
+
+    file << "x,y,rho,ux,uy\n";  // header
+    for (int x = 0; x < Nx; x++) {
+        for (int y = 0; y < Ny; y++) {
+            file << x << ","
+                 << y << ","
+                 << rho_host(x, y) << ","
+                 << u_host(x, y, 0) << ","
+                 << u_host(x, y, 1) << "\n";
+        }
+    }
+}
 
 // calculating Pi with the Newton Method
 int newtonPi(int argc, char** argv, int N) {
