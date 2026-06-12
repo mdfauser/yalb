@@ -148,6 +148,25 @@ int main(int argc, char** argv){
 
         initialize(f, rho, u);
 
+        // checking if the equilibrium stays fixed
+        for (int step = 0; step < 10; step++) {
+            computeDensity(f, rho);
+            computeVelocity(f, rho, u);
+            collision(f, rho, u, tau);
+            streaming(f, f_new);
+            auto temp = f;
+            f = f_new;
+            f_new = temp;
+
+            auto f_host = Kokkos::create_mirror_view(f);
+            Kokkos::deep_copy(f_host, f);
+            double expected = w[0] * 1.0;  // w[0] = 4/9
+            std::cout << "step " << step
+                      << " f(0,0,0)=" << f_host(0,0,0)
+                      << " diff from eq: " << std::abs(f_host(0,0,0) - expected)
+                      << std::endl;
+        }
+
         // checking the total mass is conserved
         double initial_mass = 0.0;
         auto f_loc = f;
