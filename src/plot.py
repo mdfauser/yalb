@@ -2,7 +2,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 
-df = pd.read_csv("output_1000.csv")
+df = pd.read_csv("output/output_500.csv")
 
 Nx = df['x'].max() + 1
 Ny = df['y'].max() + 1
@@ -34,5 +34,5 @@ axes[2].quiver(X[::4, ::4], Y[::4, ::4],
 axes[2].set_title('velocity field')
 
 plt.tight_layout()
-plt.savefig("output_1000.png")
+plt.savefig("output_500.png")
 plt.show()

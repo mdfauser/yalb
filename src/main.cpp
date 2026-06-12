@@ -3,41 +3,15 @@
 #include <iomanip>
 #include <fstream>
 // hardcoding
-const int cx[9] = { 0, 1,-1, 0, 0, 1,-1,-1, 1}; // for cuda chang the "const" to "constexpr"
+const int cx[9] = { 0, 1,-1, 0, 0, 1,-1,-1, 1}; // for cuda change the "const" to "constexpr"
 const int cy[9] = { 0, 0, 0, 1,-1, 1, 1,-1,-1};
 const double w[9] = {4./9, 1./9, 1./9, 1./9, 1./9,
                      1./36,1./36,1./36,1./36};
 
 const int opp[9] = {0, 2, 1, 4, 3, 6, 5, 8, 7};
 
-const int Nx = 15;
-const int Ny = 10;
-
-int main(int argc, char** argv){
-    int N = 10000;
-    Kokkos::initialize(argc, argv);
-    {
-        // distribution function
-        Kokkos::View<double***>f("f", Nx, Ny, 9);
-        // for streaming
-        Kokkos::View<double***>f_new("f_new", Nx, Ny, 9);
-        // equilibrium
-        Kokkos::View<double***>f_eq("f", Nx, Ny, 9);
-        // density
-        Kokkos::View<double**>rho("rho", Nx, Ny);
-        // velocity
-        Kokkos::View<double***>u("u", Nx, Ny, 2);
-    for (int i = 0; i < N; i++) {
-        computeDensity(f, rho);
-        computeVelocity(f, rho, u);
-        collision(f, rho, u);
-        streaming(f, f_new);
-
-    }
-    }
-    Kokkos::finalize();
-    return 0;
-}
+const int Nx = 20;
+const int Ny = 20;
 
 void computeDensity(Kokkos::View<double***> f, Kokkos::View<double**> rho){
         auto f_loc = f; // behaves like pointer so the real f is modified
@@ -71,19 +45,19 @@ void computeVelocity(Kokkos::View<double***> f, Kokkos::View<double**> rho,
 }
 
 void streaming(Kokkos::View<double***> f, Kokkos::View<double***> f_new) {
-    auto f_loc = f;
+    auto f_loc     = f;
     auto f_new_loc = f_new;
-    Kokkos::parallel_for(Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0,0}, {Nx,Ny}),
-        KOKKOS_LAMBDA(int x, int y) {
-        for (int q = 0; q<9; q++) {
+
+    Kokkos::deep_copy(f_new_loc, 0.0);  // clear stale values
+
+    Kokkos::parallel_for(Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0,0},{Nx,Ny}),
+    KOKKOS_LAMBDA(int x, int y) {
+        for (int q = 0; q < 9; q++) {
             int x_new = (x + cx[q] + Nx) % Nx;
             int y_new = (y + cy[q] + Ny) % Ny;
-            f_new(x_new, y_new, q) = f(x, y, q);
+            f_new_loc(x_new, y_new, q) = f_loc(x, y, q);
         }
     });
-    auto temp = f_loc;
-    f_loc = f_new;
-    f_new = temp;
 }
 
 void collision(Kokkos::View<double***> f, Kokkos::View<double**> rho, Kokkos::View<double***> u, double tau) {
@@ -114,7 +88,7 @@ void writeOutput(Kokkos::View<double**> rho, Kokkos::View<double***> u,
     Kokkos::deep_copy(u_host, u);
 
     // filename includes step number
-    std::string filename = "output_" + std::to_string(step) + ".csv";
+    std::string filename = "/home/mdfauser/Computer Science/HPC GPU Parallelization/yalb/src/output/output_" + std::to_string(step) + ".csv";
     std::ofstream file(filename);
 
     file << "x,y,rho,ux,uy\n";  // header
@@ -129,16 +103,91 @@ void writeOutput(Kokkos::View<double**> rho, Kokkos::View<double***> u,
     }
 }
 
-// calculating Pi with the Newton Method
-int newtonPi(int argc, char** argv, int N) {
-    double sum = 0.0;
+void initialize(Kokkos::View<double***> f, Kokkos::View<double**> rho,
+                Kokkos::View<double***> u) {
+    auto f_loc   = f;
+    auto rho_loc = rho;
+    auto u_loc   = u;
 
-    Kokkos::parallel_reduce(N,
-    KOKKOS_LAMBDA(int i, double& s){
-        double sign = (i % 2 == 0) ? 1.0 : -1.0;
-        s += sign / (2.0 * i + 1.0);
-    }, sum);
+    Kokkos::parallel_for(Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0,0},{Nx,Ny}),
+    KOKKOS_LAMBDA(int x, int y) {
 
-    double pi = 4.0 * sum;
-    std::cout << std::setprecision(15) << "pi ≈ " << pi << std::endl;
+        // uniform density with a small bump at the center
+        double r = 1.0;
+        if (x == Nx/4 && y == Ny/2) r = 1.1;  // 10% higher at 1/4
+        if (x == 3*Nx/4 && y == Ny/2) r = 0.9;
+
+        // zero velocity everywhere
+        u_loc(x, y, 0) = 0.0;
+        u_loc(x, y, 1) = 0.0;
+
+        // initialize f to equilibrium for this rho and u
+        // since u=0, the formula simplifies a lot: cu=0, udotu=0
+        for (int q = 0; q < 9; q++) {
+            f_loc(x, y, q) = w[q] * r;  // simplified f_eq at rest
+        }
+        rho_loc(x, y) = r;
+    });
+}
+
+int main(int argc, char** argv){
+    const int N_steps = 2000;
+    const double tau = 0.6;
+    Kokkos::initialize(argc, argv);
+    {
+        // distribution function
+        Kokkos::View<double***>f("f", Nx, Ny, 9);
+        // for streaming
+        Kokkos::View<double***>f_new("f_new", Nx, Ny, 9);
+        // equilibrium
+        Kokkos::View<double***>f_eq("f_eq", Nx, Ny, 9);
+        // density
+        Kokkos::View<double**>rho("rho", Nx, Ny);
+        // velocity
+        Kokkos::View<double***>u("u", Nx, Ny, 2);
+
+        initialize(f, rho, u);
+
+        // checking the total mass is conserved
+        double initial_mass = 0.0;
+        auto f_loc = f;
+        Kokkos::parallel_reduce(Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0,0},{Nx,Ny}),
+       KOKKOS_LAMBDA(int x, int y, double& mass) {
+           for (int q = 0; q < 9; q++) {
+               mass += f_loc(x, y, q);
+           }
+        }, initial_mass);
+        std::cout << std::setprecision(15) << "Initial mass: " << initial_mass << std::endl;
+
+        for (int step = 0; step <= N_steps; step++) {
+            computeDensity(f, rho);
+            computeVelocity(f, rho, u);
+            collision(f, rho, u, tau);
+            streaming(f, f_new);
+            // swapping
+            auto temp = f;
+            f = f_new;
+            f_new = temp;
+
+            if (step % 10 == 0) writeOutput(rho,u,Nx,Ny,step);
+
+
+            // checking the total mass
+            if (step % 100 == 0) {
+                double current_mass = 0.0;
+                auto f_loc = f;
+                Kokkos::parallel_reduce(Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0,0},{Nx,Ny}),
+       KOKKOS_LAMBDA(int x, int y, double& mass) {
+               for (int q = 0; q < 9; q++) {
+                    mass += f_loc(x, y, q);
+                   }
+                }, current_mass);
+                std::cout << std::setprecision(15) << "Current mass: " << current_mass << std::endl;
+            }
+        }
+
+
+    }
+    Kokkos::finalize();
+    return 0;
 }
