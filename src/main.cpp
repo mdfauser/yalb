@@ -156,9 +156,9 @@ void initializeShearWave(Kokkos::View<double***> f, Kokkos::View<double**> rho,
 }
 
 int main(int argc, char** argv){
-    const int N_steps = 2000;
-    const double tau = 0.6;
-    const double u0 = 0.01;
+    const int N_steps = 1000;
+    const double tau = 0.8;
+    const double u0 = 0.07;
     Kokkos::initialize(argc, argv);
     {
         // distribution function
