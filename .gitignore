@@ -1,6 +1,8 @@
 # Custom files here
 *.xyz
 .idea
+# custom folders
+/output/
 
 # -------------- Below are genereated exclusion patterns ----------------------
 

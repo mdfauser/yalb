@@ -15,7 +15,7 @@ if(MPI_CXX_FOUND)
     message(STATUS "MPI found")
 endif()
 
-find_package(Eigen3 5.0.1)
+find_package(Eigen3)
 if(NOT Eigen3_FOUND)
     include(FetchContent)
     FetchContent_Declare(
@@ -46,5 +46,5 @@ endif()
 enable_testing()
 
 add_subdirectory(src)
-add_subdirectory(executables)
 add_subdirectory(tests)
+
