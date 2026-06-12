@@ -162,7 +162,42 @@ int main(int argc, char** argv){
         for (int step = 0; step <= N_steps; step++) {
             computeDensity(f, rho);
             computeVelocity(f, rho, u);
-            collision(f, rho, u, tau);
+            // checking for the momentum conservation
+            if (step % 1000 == 0) {
+                auto f_loc = f;
+
+                // compute momentum BEFORE collision
+                double mom_x_pre = 0.0, mom_y_pre = 0.0;
+                Kokkos::parallel_reduce(Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0,0},{Nx,Ny}),
+                KOKKOS_LAMBDA(int x, int y, double& mx, double& my) {
+                    for (int q = 0; q < 9; q++) {
+                        mx += f_loc(x, y, q) * cx[q];
+                        my += f_loc(x, y, q) * cy[q];
+                    }
+                }, mom_x_pre, mom_y_pre);
+
+                collision(f, rho, u, tau);
+
+                // compute momentum AFTER collision
+                double mom_x_post = 0.0, mom_y_post = 0.0;
+                Kokkos::parallel_reduce(Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0,0},{Nx,Ny}),
+                KOKKOS_LAMBDA(int x, int y, double& mx, double& my) {
+                    for (int q = 0; q < 9; q++) {
+                        mx += f_loc(x, y, q) * cx[q];
+                        my += f_loc(x, y, q) * cy[q];
+                    }
+                }, mom_x_post, mom_y_post);
+
+                std::cout << std::setprecision(15)
+                          << "step " << step
+                          << " px: " << mom_x_pre << " -> " << mom_x_post
+                          << " diff: " << std::abs(mom_x_post - mom_x_pre)
+                          << " py: " << mom_y_pre << " -> " << mom_y_post
+                          << " diff: " << std::abs(mom_y_post - mom_y_pre)
+                          << std::endl;
+            } else {
+                collision(f, rho, u, tau);
+            }
             streaming(f, f_new);
             // swapping
             auto temp = f;
@@ -173,7 +208,7 @@ int main(int argc, char** argv){
 
 
             // checking the total mass
-            if (step % 100 == 0) {
+            if (step % 1000 == 0) {
                 double current_mass = 0.0;
                 auto f_loc = f;
                 Kokkos::parallel_reduce(Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0,0},{Nx,Ny}),
