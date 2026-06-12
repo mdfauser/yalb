@@ -130,9 +130,35 @@ void initialize(Kokkos::View<double***> f, Kokkos::View<double**> rho,
     });
 }
 
+void initializeShearWave(Kokkos::View<double***> f, Kokkos::View<double**> rho,
+                         Kokkos::View<double***> u, double u0) {
+    auto f_loc   = f;
+    auto rho_loc = rho;
+    auto u_loc   = u;
+
+    Kokkos::parallel_for(Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0,0},{Nx,Ny}),
+    KOKKOS_LAMBDA(int x, int y) {
+        double r  = 1.0;
+        double ux = u0 * Kokkos::sin(2.0 * M_PI * y / Ny);
+        double uy = 0.0;
+
+        u_loc(x, y, 0) = ux;
+        u_loc(x, y, 1) = uy;
+        rho_loc(x, y)  = r;
+
+        // full f_eq since u != 0 here
+        double udotu = ux * ux + uy * uy;
+        for (int q = 0; q < 9; q++) {
+            double cu = cx[q]*ux + cy[q]*uy;
+            f_loc(x, y, q) = w[q] * r * (1.0 + 3.0*cu + 4.5*cu*cu - 1.5*udotu);
+        }
+    });
+}
+
 int main(int argc, char** argv){
     const int N_steps = 2000;
     const double tau = 0.6;
+    const double u0 = 0.01;
     Kokkos::initialize(argc, argv);
     {
         // distribution function
@@ -146,26 +172,7 @@ int main(int argc, char** argv){
         // velocity
         Kokkos::View<double***>u("u", Nx, Ny, 2);
 
-        initialize(f, rho, u);
-
-        // checking if the equilibrium stays fixed
-        for (int step = 0; step < 10; step++) {
-            computeDensity(f, rho);
-            computeVelocity(f, rho, u);
-            collision(f, rho, u, tau);
-            streaming(f, f_new);
-            auto temp = f;
-            f = f_new;
-            f_new = temp;
-
-            auto f_host = Kokkos::create_mirror_view(f);
-            Kokkos::deep_copy(f_host, f);
-            double expected = w[0] * 1.0;  // w[0] = 4/9
-            std::cout << "step " << step
-                      << " f(0,0,0)=" << f_host(0,0,0)
-                      << " diff from eq: " << std::abs(f_host(0,0,0) - expected)
-                      << std::endl;
-        }
+        initializeShearWave(f, rho, u, u0);
 
         // checking the total mass is conserved
         double initial_mass = 0.0;
