@@ -90,11 +90,17 @@ void streamingBouncing(Kokkos::View<double***> f, Kokkos::View<double***> f_new,
 void setup_streaming_targets(Kokkos::View<int ***> dest_x,
                              Kokkos::View<int ***> dest_y,
                              Kokkos::View<int ***> dest_q,
-                             Kokkos::View<int **> mask) {
+                             Kokkos::View<int **> mask,
+                             Kokkos::View<double**> wall_ux,
+                             Kokkos::View<double**> wall_uy,
+                             Kokkos::View<double***> bounce_corr) {
     auto dx_loc = dest_x;
     auto dy_loc = dest_y;
     auto dq_loc = dest_q;
     auto mask_loc = mask;
+    auto bc_loc = bounce_corr;
+    auto wux_loc = wall_ux;
+    auto wuy_loc = wall_uy;
 
     Kokkos::parallel_for(
         Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0, 0}, {Nx, Ny}),
@@ -108,6 +114,11 @@ void setup_streaming_targets(Kokkos::View<int ***> dest_x,
                 dx_loc(x, y, q) = is_wall ? x : x_new;
                 dy_loc(x, y, q) = is_wall ? y : y_new;
                 dq_loc(x, y, q) = is_wall ? opp[q] : q;
+
+                double rho_wall = 1.0;
+                double cs2 = 1.0 / 3.0;
+                double cu_wall = cx[q] * wux_loc(x_new, y_new) + cy[q] * wuy_loc(x_new, y_new);
+                bc_loc(x, y, q) = is_wall ? - 2.0 * w[q] * rho_wall * (cu_wall / cs2) : 0.0;
             }
         });
 }
@@ -221,10 +232,31 @@ void initialize_mask(Kokkos::View<int**> mask) {
     });
 }
 
+void initialize_wall_velocity(Kokkos::View<double**> wall_ux,
+                                      Kokkos::View<double**> wall_uy,
+                                      double lid_speed) {
+    auto wux = wall_ux;
+    auto wuy = wall_uy;
+    Kokkos::parallel_for(Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0,0},{Nx,Ny}),
+    KOKKOS_LAMBDA(int x, int y) {
+        // top wall is the lid, moving in +x direction
+        if (y == Ny-1) {
+            wux(x, y) = lid_speed;
+            wuy(x, y) = 0.0;
+        } else {
+            wux(x, y) = 0.0;
+            wuy(x, y) = 0.0;
+        }
+    });
+}
+
+
 int main(int argc, char** argv){
     const int N_steps = 5000;
     const double tau = 0.8;
     const double u0 = 0.07;
+    const double lid_speed = 0.1;
+    const double relaxation = 1.7;
     Kokkos::initialize(argc, argv);
     {
         // distribution function
@@ -243,9 +275,13 @@ int main(int argc, char** argv){
         Kokkos::View<int***> dest_x("dest_x", Nx, Ny, 9);
         Kokkos::View<int***> dest_y("dest_y", Nx, Ny, 9);
         Kokkos::View<int***> dest_q("dest_q", Nx, Ny, 9);
+        // set up for the moving wall
+        Kokkos::View<double***> bounce_corr("bounce_corr", Nx, Ny, 9);
+        Kokkos::View<double**> wall_ux("wall_ux", Nx, Ny);
+        Kokkos::View<double**> wall_uy("wall_uy", Nx, Ny);
 
         initialize_mask(mask);
-        setup_streaming_targets(dest_x, dest_y, dest_q, mask);
+        setup_streaming_targets(dest_x, dest_y, dest_q, mask, wall_ux, wall_uy, bounce_corr);
         initializeShearWave(f, rho, u, u0);
 
         // checking the total mass is conserved
