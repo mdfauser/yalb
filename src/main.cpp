@@ -3,15 +3,15 @@
 #include <iomanip>
 #include <fstream>
 // hardcoding
-constexpr int cx[9] = { 0, 1, 0, -1, 0, 1,-1,-1, 1}; // for cuda change the "const" to "constexpr"
-constexpr int cy[9] = { 0, 0, 1, 0, -1, 1, 1, -1,-1};
-constexpr double w[9] = {4./9, 1./9, 1./9, 1./9, 1./9,
+const int cx[9] = { 0, 1, 0, -1, 0, 1,-1,-1, 1}; // for cuda change the "const" to "constexpr"
+const int cy[9] = { 0, 0, 1, 0, -1, 1, 1, -1,-1};
+const double w[9] = {4./9, 1./9, 1./9, 1./9, 1./9,
                      1./36,1./36,1./36,1./36};
 
-constexpr int opp[9] = {0, 3, 4, 1, 2, 7, 8, 5, 6};
+const int opp[9] = {0, 3, 4, 1, 2, 7, 8, 5, 6};
 
-constexpr int Nx = 200;
-constexpr int Ny = 200;
+const int Nx = 128;
+const int Ny = 128;
 
 void computeDensity(Kokkos::View<double***> f, Kokkos::View<double**> rho, Kokkos::View<int**> mask){
         auto f_loc = f; // behaves like pointer so the real f is modified
@@ -266,8 +266,8 @@ double check_steady_state(Kokkos::View<double***> u, Kokkos::View<double***> u_o
 
 
 int main(int argc, char** argv){
-    const int N_steps = 35000;
-    const double tau = 0.55;
+    const int N_steps = 10000;
+    const double tau = 0.8;
     const double u0 = 0.07;
     const double lid_speed = 0.1;
     const double relaxation = 1.7;
@@ -297,7 +297,6 @@ int main(int argc, char** argv){
         Kokkos::View<double**> wall_uy("wall_uy", Nx, Ny);
 
         initialize_mask(mask);
-        initialize_wall_velocity(wall_ux, wall_uy, lid_speed);
         setup_streaming_targets(dest_x, dest_y, dest_q, mask, wall_ux, wall_uy, bounce_corr);
         initializeShearWave(f, rho, u, u0);
 
