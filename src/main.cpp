@@ -10,8 +10,8 @@ const double w[9] = {4./9, 1./9, 1./9, 1./9, 1./9,
 
 const int opp[9] = {0, 3, 4, 1, 2, 7, 8, 5, 6};
 
-const int Nx = 20;
-const int Ny = 20;
+const int Nx = 128;
+const int Ny = 128;
 
 void computeDensity(Kokkos::View<double***> f, Kokkos::View<double**> rho, Kokkos::View<int**> mask){
         auto f_loc = f; // behaves like pointer so the real f is modified
@@ -250,9 +250,23 @@ void initialize_wall_velocity(Kokkos::View<double**> wall_ux,
     });
 }
 
+double check_steady_state(Kokkos::View<double***> u, Kokkos::View<double***> u_old) {
+    double max_diff = 0.0;
+    auto u_loc     = u;
+    auto u_old_loc = u_old;
+    Kokkos::parallel_reduce(Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0,0},{Nx,Ny}),
+    KOKKOS_LAMBDA(int x, int y, double& md) {
+        double dx = u_loc(x,y,0) - u_old_loc(x,y,0);
+        double dy = u_loc(x,y,1) - u_old_loc(x,y,1);
+        double d  = Kokkos::sqrt(dx*dx + dy*dy);
+        if (d > md) md = d;
+    }, Kokkos::Max<double>(max_diff));
+    return max_diff;
+}
+
 
 int main(int argc, char** argv){
-    const int N_steps = 5000;
+    const int N_steps = 10000;
     const double tau = 0.8;
     const double u0 = 0.07;
     const double lid_speed = 0.1;
@@ -269,6 +283,8 @@ int main(int argc, char** argv){
         Kokkos::View<double**>rho("rho", Nx, Ny);
         // velocity
         Kokkos::View<double***>u("u", Nx, Ny, 2);
+        // checking the steady field
+        Kokkos::View<double***> u_old("u_old", Nx, Ny, 2);
         // mask for bouncing
         Kokkos::View<int**>mask("mask", Nx, Ny);
         // look-up tables
@@ -301,7 +317,6 @@ int main(int argc, char** argv){
             // checking for the momentum conservation
             if (step % 1000 == 0) {
                 auto f_loc = f;
-
                 // compute momentum BEFORE collision
                 double mom_x_pre = 0.0, mom_y_pre = 0.0;
                 Kokkos::parallel_reduce(Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0,0},{Nx,Ny}),
@@ -340,6 +355,16 @@ int main(int argc, char** argv){
             auto temp = f;
             f = f_new;
             f_new = temp;
+
+            if (step % 100 == 0 && step > 0) {
+                double diff = check_steady_state(u, u_old);
+                std::cout << "step " << step << " max change: " << diff << std::endl;
+                if (diff < 1e-7) {
+                    std::cout << "Steady state reached at step " << step << std::endl;
+                    break;
+                }
+                Kokkos::deep_copy(u_old, u);
+            }
 
             if (step % 10 == 0) writeOutput(rho,u,Nx,Ny,step);
 
