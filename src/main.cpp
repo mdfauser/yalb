@@ -2,6 +2,7 @@
 #include <iostream>
 #include <iomanip>
 #include <fstream>
+<<<<<<< Updated upstream
 // hardcoding
 const int cx[9] = { 0, 1, 0, -1, 0, 1,-1,-1, 1}; // for cuda change the "const" to "constexpr"
 const int cy[9] = { 0, 0, 1, 0, -1, 1, 1, -1,-1};
@@ -12,6 +13,10 @@ const int opp[9] = {0, 3, 4, 1, 2, 7, 8, 5, 6};
 
 const int Nx = 128;
 const int Ny = 128;
+=======
+constexpr int Nx = 200;
+constexpr int Ny = 200;
+>>>>>>> Stashed changes
 
 void computeDensity(Kokkos::View<double***> f, Kokkos::View<double**> rho, Kokkos::View<int**> mask){
         auto f_loc = f; // behaves like pointer so the real f is modified
@@ -30,11 +35,13 @@ void computeDensity(Kokkos::View<double***> f, Kokkos::View<double**> rho, Kokko
 
 
 void computeVelocity(Kokkos::View<double***> f, Kokkos::View<double**> rho,
-                     Kokkos::View<double***> u, Kokkos::View<int**> mask) {
+                     Kokkos::View<double***> u, Kokkos::View<int**> mask, Kokkos::View<int*>cx, Kokkos::View<int*>cy) {
         auto f_loc = f;
         auto rho_loc = rho;
         auto u_loc = u;
         auto mask_loc = mask;
+        auto cx_loc = cx;
+        auto cy_loc = cy;
 
         Kokkos::parallel_for(Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0,0}, {Nx,Ny}),
         KOKKOS_LAMBDA(int x, int y) {
@@ -42,25 +49,27 @@ void computeVelocity(Kokkos::View<double***> f, Kokkos::View<double**> rho,
         double ux = 0.0;
         double uy = 0.0;
         for (int q = 0; q<9; q++) {
-            ux += (f_loc(x, y, q) * cx[q]);
-            uy += (f_loc(x, y, q) * cy[q]);
+            ux += (f_loc(x, y, q) * cx_loc[q]);
+            uy += (f_loc(x, y, q) * cy_loc[q]);
         }
         u_loc(x,y, 0) = ux / rho_loc(x, y);
         u_loc(x,y, 1) = uy / rho_loc(x, y);
     });
 }
 // periodic boundary
-void streaming(Kokkos::View<double***> f, Kokkos::View<double***> f_new) {
+void streaming(Kokkos::View<double***> f, Kokkos::View<double***> f_new, Kokkos::View<int*>cx, Kokkos::View<int*>cy) {
     auto f_loc     = f;
     auto f_new_loc = f_new;
+    auto cx_loc = cx;
+    auto cy_loc = cy;
 
     Kokkos::deep_copy(f_new_loc, 0.0);  // clear stale values
 
     Kokkos::parallel_for(Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0,0},{Nx,Ny}),
     KOKKOS_LAMBDA(int x, int y) {
         for (int q = 0; q < 9; q++) {
-            int x_new = (x + cx[q] + Nx) % Nx;
-            int y_new = (y + cy[q] + Ny) % Ny;
+            int x_new = (x + cx_loc[q] + Nx) % Nx;
+            int y_new = (y + cy_loc[q] + Ny) % Ny;
             f_new_loc(x_new, y_new, q) = f_loc(x, y, q);
         }
     });
@@ -93,7 +102,11 @@ void setup_streaming_targets(Kokkos::View<int ***> dest_x,
                              Kokkos::View<int **> mask,
                              Kokkos::View<double**> wall_ux,
                              Kokkos::View<double**> wall_uy,
-                             Kokkos::View<double***> bounce_corr) {
+                             Kokkos::View<double***> bounce_corr,
+                             Kokkos::View<int*>cx,
+                             Kokkos::View<int*>cy,
+                             Kokkos::View<int*>opp,
+                             Kokkos::View<double*>w) {
     auto dx_loc = dest_x;
     auto dy_loc = dest_y;
     auto dq_loc = dest_q;
@@ -101,33 +114,46 @@ void setup_streaming_targets(Kokkos::View<int ***> dest_x,
     auto bc_loc = bounce_corr;
     auto wux_loc = wall_ux;
     auto wuy_loc = wall_uy;
+    auto cx_loc = cx;
+    auto cy_loc = cy;
+    auto opp_loc = opp;
+    auto w_loc = w;
 
     Kokkos::parallel_for(
         Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0, 0}, {Nx, Ny}),
         KOKKOS_LAMBDA(int x, int y) {
             for (int q = 0; q < 9; q++) {
-                int x_new = (x + cx[q] + Nx) % Nx;
-                int y_new = (y + cy[q] + Ny) % Ny;
+                int x_new = (x + cx_loc[q] + Nx) % Nx;
+                int y_new = (y + cy_loc[q] + Ny) % Ny;
 
                 bool is_wall = (mask_loc(x_new, y_new) == 0.0);
 
                 dx_loc(x, y, q) = is_wall ? x : x_new;
                 dy_loc(x, y, q) = is_wall ? y : y_new;
-                dq_loc(x, y, q) = is_wall ? opp[q] : q;
+                dq_loc(x, y, q) = is_wall ? opp_loc[q] : q;
 
                 double rho_wall = 1.0;
                 double cs2 = 1.0 / 3.0;
-                double cu_wall = cx[q] * wux_loc(x_new, y_new) + cy[q] * wuy_loc(x_new, y_new);
-                bc_loc(x, y, q) = is_wall ? - 2.0 * w[q] * rho_wall * (cu_wall / cs2) : 0.0;
+                double cu_wall = cx_loc[q] * wux_loc(x_new, y_new) + cy_loc[q] * wuy_loc(x_new, y_new);
+                bc_loc(x, y, q) = is_wall ? - 2.0 * w_loc[q] * rho_wall * (cu_wall / cs2) : 0.0;
             }
         });
 }
 
-void collision(Kokkos::View<double***> f, Kokkos::View<double**> rho, Kokkos::View<double***> u, double tau, Kokkos::View<int**> mask) {
+void collision(Kokkos::View<double***> f,
+                Kokkos::View<double**> rho,
+                Kokkos::View<double***> u, double tau,
+                Kokkos::View<int**> mask,
+                Kokkos::View<int*>cx,
+                Kokkos::View<int*>cy,
+                Kokkos::View<double*>w) {
     auto f_loc   = f;
     auto rho_loc = rho;
     auto u_loc   = u;
     auto mask_loc = mask;
+    auto w_loc   = w;
+    auto cx_loc = cx;
+    auto cy_loc = cy;
 
     Kokkos::parallel_for(Kokkos::MDRangePolicy({0,0},{Nx,Ny}),
         KOKKOS_LAMBDA(int x, int y) {
@@ -137,8 +163,8 @@ void collision(Kokkos::View<double***> f, Kokkos::View<double**> rho, Kokkos::Vi
         double rho  = rho_loc(x, y);
         double udotu = ux*ux + uy*uy;
         for (int q = 0; q<9; q++) {
-            double cu   = cx[q]*ux + cy[q]*uy;
-            double f_eq = w[q] * rho * (1.0 + 3.0*cu + 4.5*cu*cu - 1.5*udotu);
+            double cu   = cx_loc[q]*ux + cy_loc[q]*uy;
+            double f_eq = w_loc[q] * rho * (1.0 + 3.0*cu + 4.5*cu*cu - 1.5*udotu);
             f_loc(x, y, q) += -(f_loc(x, y, q) - f_eq) / tau;
         }
     });
@@ -170,10 +196,12 @@ void writeOutput(Kokkos::View<double**> rho, Kokkos::View<double***> u,
 }
 
 void initialize(Kokkos::View<double***> f, Kokkos::View<double**> rho,
-                Kokkos::View<double***> u) {
+                Kokkos::View<double***> u,
+                Kokkos::View<double*>w) {
     auto f_loc   = f;
     auto rho_loc = rho;
     auto u_loc   = u;
+    auto w_loc = w;
 
     Kokkos::parallel_for(Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0,0},{Nx,Ny}),
     KOKKOS_LAMBDA(int x, int y) {
@@ -190,17 +218,20 @@ void initialize(Kokkos::View<double***> f, Kokkos::View<double**> rho,
         // initialize f to equilibrium for this rho and u
         // since u=0, the formula simplifies a lot: cu=0, udotu=0
         for (int q = 0; q < 9; q++) {
-            f_loc(x, y, q) = w[q] * r;  // simplified f_eq at rest
+            f_loc(x, y, q) = w_loc[q] * r;  // simplified f_eq at rest
         }
         rho_loc(x, y) = r;
     });
 }
 
 void initializeShearWave(Kokkos::View<double***> f, Kokkos::View<double**> rho,
-                         Kokkos::View<double***> u, double u0) {
+                         Kokkos::View<double***> u, double u0, Kokkos::View<double*>w, Kokkos::View<int*>cx, Kokkos::View<int*>cy) {
     auto f_loc   = f;
     auto rho_loc = rho;
     auto u_loc   = u;
+    auto w_loc = w;
+    auto cx_loc = cx;
+    auto cy_loc = cy;
 
     Kokkos::parallel_for(Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0,0},{Nx,Ny}),
     KOKKOS_LAMBDA(int x, int y) {
@@ -215,8 +246,8 @@ void initializeShearWave(Kokkos::View<double***> f, Kokkos::View<double**> rho,
         // full f_eq since u != 0 here
         double udotu = ux * ux + uy * uy;
         for (int q = 0; q < 9; q++) {
-            double cu = cx[q]*ux + cy[q]*uy;
-            f_loc(x, y, q) = w[q] * r * (1.0 + 3.0*cu + 4.5*cu*cu - 1.5*udotu);
+            double cu = cx_loc[q]*ux + cy_loc[q]*uy;
+            f_loc(x, y, q) = w_loc[q] * r * (1.0 + 3.0*cu + 4.5*cu*cu - 1.5*udotu);
         }
     });
 }
@@ -273,6 +304,34 @@ int main(int argc, char** argv){
     const double relaxation = 1.7;
     Kokkos::initialize(argc, argv);
     {
+        Kokkos::View<int*>    cx("cx", 9);
+        Kokkos::View<int*>    cy("cy", 9);
+        Kokkos::View<int*>    opp("opp", 9);
+        Kokkos::View<double*> w("w", 9);
+
+        // fill on host then deep_copy to device
+        auto cx_h  = Kokkos::create_mirror_view(cx);
+        auto cy_h  = Kokkos::create_mirror_view(cy);
+        auto opp_h = Kokkos::create_mirror_view(opp);
+        auto w_h   = Kokkos::create_mirror_view(w);
+
+        int cx_v[9] = { 0, 1, 0, -1, 0, 1,-1,-1, 1}; // for cuda change the "const" to "constexpr"
+        int cy_v[9] = { 0, 0, 1, 0, -1, 1, 1, -1,-1};
+        double w_v[9] = {4./9, 1./9, 1./9, 1./9, 1./9,
+                             1./36,1./36,1./36,1./36};
+        int opp_v[9] = {0, 3, 4, 1, 2, 7, 8, 5, 6};
+
+        for (int q = 0; q < 9; q++) {
+            cx_h(q)  = cx_v[q];
+            cy_h(q)  = cy_v[q];
+            opp_h(q) = opp_v[q];
+            w_h(q)   = w_v[q];
+        }
+        Kokkos::deep_copy(cx, cx_h);
+        Kokkos::deep_copy(cy, cy_h);
+        Kokkos::deep_copy(opp, opp_h);
+        Kokkos::deep_copy(w, w_h);
+
         // distribution function
         Kokkos::View<double***>f("f", Nx, Ny, 9);
         // for streaming
@@ -297,8 +356,14 @@ int main(int argc, char** argv){
         Kokkos::View<double**> wall_uy("wall_uy", Nx, Ny);
 
         initialize_mask(mask);
+<<<<<<< Updated upstream
         setup_streaming_targets(dest_x, dest_y, dest_q, mask, wall_ux, wall_uy, bounce_corr);
         initializeShearWave(f, rho, u, u0);
+=======
+        initialize_wall_velocity(wall_ux, wall_uy, lid_speed);
+        setup_streaming_targets(dest_x, dest_y, dest_q, mask, wall_ux, wall_uy, bounce_corr, cx, cy, opp, w);
+        initializeShearWave(f, rho, u, u0, w, cx, cy);
+>>>>>>> Stashed changes
 
         // checking the total mass is conserved
         double initial_mass = 0.0;
@@ -313,7 +378,7 @@ int main(int argc, char** argv){
 
         for (int step = 0; step <= N_steps; step++) {
             computeDensity(f, rho, mask);
-            computeVelocity(f, rho, u, mask);
+            computeVelocity(f, rho, u, mask, cx, cy);
             // checking for the momentum conservation
             if (step % 1000 == 0) {
                 auto f_loc = f;
@@ -328,7 +393,7 @@ int main(int argc, char** argv){
                     }
                 }, mom_x_pre, mom_y_pre);
 
-                collision(f, rho, u, tau, mask);
+                collision(f, rho, u, tau, mask, cx, cy, w);
 
                 // compute momentum AFTER collision
                 double mom_x_post = 0.0, mom_y_post = 0.0;
@@ -348,7 +413,7 @@ int main(int argc, char** argv){
                           << " diff: " << std::abs(mom_y_post - mom_y_pre)
                           << std::endl;
             } else {
-                collision(f, rho, u, tau, mask);
+                collision(f, rho, u, tau, mask, cx, cy, w);
             }
             streamingBouncing(f, f_new, dest_x, dest_y, dest_q, mask);
             // swapping
