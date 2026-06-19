@@ -5,7 +5,7 @@
 struct Config {
     int    Nx        = 200;
     int    Ny        = 200;
-    int    N_steps   = 10000;
+    int    N_steps   = 50000;
     double tau       = 0.8;
     double u0        = 0.07;
     double lid_speed = 0.1;
