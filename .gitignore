@@ -4,6 +4,8 @@
 # custom folders
 /output/
 
+/src/main_old.cpp
+
 # -------------- Below are genereated exclusion patterns ----------------------
 
 # Created by https://www.toptal.com/developers/gitignore/api/clion

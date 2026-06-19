@@ -2,7 +2,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 
-df = pd.read_csv("output/output_500.csv")
+df = pd.read_csv("../output/output_500.csv")
 
 Nx = df['x'].max() + 1
 Ny = df['y'].max() + 1

@@ -54,7 +54,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(benchmark)
 
 # --- Benchmark executable ---
-add_executable(bench gemv_benchmarks.cpp)
+add_executable(bench gemv_benchmark.cpp)
 target_link_libraries(bench PRIVATE Eigen3::Eigen benchmark::benchmark)
 
 # --- Main project structure ---
