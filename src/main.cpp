@@ -1,7 +1,9 @@
 #include <Kokkos_Core.hpp>
+#include <chrono>
 #include <iostream>
 #include <iomanip>
-
+#include <string>
+#include <algorithm>
 #include "config.hpp"
 #include "lattice.hpp"
 #include "sim_state.hpp"
@@ -12,63 +14,107 @@
 
 int main(int argc, char** argv) {
     Config cfg;
-    // Override defaults here or parse from argv later
-    // cfg.Nx = 400;  cfg.tau = 0.6;  etc.
+    bool benchmark_mode = (argc > 1 && std::string(argv[1]) == "bench");
 
     Kokkos::initialize(argc, argv);
     {
-        Lattice  lat;
-        SimState s(cfg);
+        if (benchmark_mode) {
+            std::cout << "Backend: " << Kokkos::DefaultExecutionSpace::name() << "\n";
+            std::cout << "size,Nx,Ny,steps,runtime_s,mlups\n";
 
-        // --- Setup ---
-        lbm::initialize_mask(s, cfg);
-        lbm::initialize_wall_velocity(s, cfg);
-        lbm::setup_streaming_targets(s, lat, cfg);
-        lbm::init_shear_wave(s, lat, cfg);
+            const int sizes[]  = {64, 128, 256, 512, 1024, 2048, 4096};
+            const int n_warmup = 50;
 
-        double initial_mass = lbm::compute_mass(s, cfg);
-        std::cout << std::setprecision(15)
-                  << "Initial mass: " << initial_mass << "\n";
+            for (int N : sizes) {
+                Config bcfg = cfg;
+                bcfg.Nx = N;
+                bcfg.Ny = N;
+                bcfg.N_steps = std::max(200, 50000 / (N / 64));
 
-        // --- Time loop ---
-        for (int step = 0; step <= cfg.N_steps; step++) {
-            lbm::compute_density(s, cfg);
-            lbm::compute_velocity(s, lat, cfg);
+                Lattice  lat;
+                SimState s(bcfg);
 
-            // Momentum conservation check (diagnostic steps only)
-            if (step % cfg.diag_interval == 0) {
-                auto pre = lbm::compute_momentum(s, lat, cfg);
-                lbm::collide(s, lat, cfg);
-                auto post = lbm::compute_momentum(s, lat, cfg);
-                lbm::print_momentum_check(pre, post, step);
-            } else {
-                lbm::collide(s, lat, cfg);
-            }
+                lbm::initialize_mask(s, bcfg);
+                lbm::initialize_wall_velocity(s, bcfg);
+                lbm::setup_streaming_targets(s, lat, bcfg);
+                lbm::init_shear_wave(s, lat, bcfg);
 
-            lbm::stream_bounce_back(s, cfg);
-            s.swap_distributions();
-
-            // Steady-state check
-            if (step % cfg.steady_check_interval == 0 && step > 0) {
-                double diff = lbm::check_steady_state(s, cfg);
-                std::cout << "step " << step << " max change: " << diff << "\n";
-                if (diff < cfg.steady_threshold) {
-                    std::cout << "Steady state reached at step " << step << "\n";
-                    break;
+                for (int step = 0; step < n_warmup; step++) {
+                    lbm::compute_density(s, bcfg);
+                    lbm::compute_velocity(s, lat, bcfg);
+                    lbm::collide(s, lat, bcfg);
+                    lbm::stream_bounce_back(s, bcfg);
+                    s.swap_distributions();
                 }
-                Kokkos::deep_copy(s.u_old, s.u);
-            }
+                Kokkos::fence();
 
-            // Output
-            if (step % cfg.output_interval == 0) {
-                lbm::write_csv(s, cfg, step);
-            }
+                auto start = std::chrono::high_resolution_clock::now();
+                for (int step = 0; step < bcfg.N_steps; step++) {
+                    lbm::compute_density(s, bcfg);
+                    lbm::compute_velocity(s, lat, bcfg);
+                    lbm::collide(s, lat, bcfg);
+                    lbm::stream_bounce_back(s, bcfg);
+                    s.swap_distributions();
+                }
+                Kokkos::fence();
+                auto end = std::chrono::high_resolution_clock::now();
 
-            // Mass conservation check
-            if (step % cfg.diag_interval == 0) {
-                double mass = lbm::compute_mass(s, cfg);
-                std::cout << std::setprecision(15)
-                          << "Current mass: " << mass << "\n";
+                double secs  = std::chrono::duration<double>(end - start).count();
+                double cells = double(bcfg.Nx) * double(bcfg.Ny);
+                double mlups = (cells * bcfg.N_steps) / (secs * 1e6);
+
+                std::cout << N << "," << bcfg.Nx << "," << bcfg.Ny << ","
+                          << bcfg.N_steps << "," << secs << "," << mlups << "\n";
+            }
+        }
+        else {
+            Lattice  lat;
+            SimState s(cfg);
+
+            lbm::initialize_mask(s, cfg);
+            lbm::initialize_wall_velocity(s, cfg);
+            lbm::setup_streaming_targets(s, lat, cfg);
+            lbm::init_shear_wave(s, lat, cfg);
+
+            double initial_mass = lbm::compute_mass(s, cfg);
+            std::cout << std::setprecision(15)
+                      << "Initial mass: " << initial_mass << "\n";
+
+            for (int step = 0; step <= cfg.N_steps; step++) {
+                lbm::compute_density(s, cfg);
+                lbm::compute_velocity(s, lat, cfg);
+
+                if (step % cfg.diag_interval == 0) {
+                    auto pre  = lbm::compute_momentum(s, lat, cfg);
+                    lbm::collide(s, lat, cfg);
+                    auto post = lbm::compute_momentum(s, lat, cfg);
+                    lbm::print_momentum_check(pre, post, step);
+                } else {
+                    lbm::collide(s, lat, cfg);
+                }
+
+                lbm::stream_bounce_back(s, cfg);
+                s.swap_distributions();
+
+                if (step % cfg.steady_check_interval == 0 && step > 0) {
+                    double diff = lbm::check_steady_state(s, cfg);
+                    std::cout << "step " << step << " max change: " << diff << "\n";
+                    if (diff < cfg.steady_threshold) {
+                        std::cout << "Steady state reached at step " << step << "\n";
+                        break;
+                    }
+                    Kokkos::deep_copy(s.u_old, s.u);
+                }
+
+                if (step % cfg.output_interval == 0) {
+                    lbm::write_csv(s, cfg, step);
+                }
+
+                if (step % cfg.diag_interval == 0) {
+                    double mass = lbm::compute_mass(s, cfg);
+                    std::cout << std::setprecision(15)
+                              << "Current mass: " << mass << "\n";
+                }
             }
         }
     }

@@ -3,8 +3,8 @@
 // Runtime configuration for the simulation.
 // No more global constexpr Nx/Ny — pass this around instead.
 struct Config {
-    int    Nx        = 200;
-    int    Ny        = 200;
+    int    Nx        = 1024;
+    int    Ny        = 1024;
     int    N_steps   = 50000;
     double tau       = 0.8;
     double u0        = 0.07;

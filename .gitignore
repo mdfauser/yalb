@@ -3,7 +3,7 @@
 .idea
 # custom folders
 /output/
-
+/v_out/
 /src/main_old.cpp
 
 # -------------- Below are genereated exclusion patterns ----------------------
