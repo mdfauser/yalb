@@ -78,6 +78,7 @@ inline void stream_bounce_back(SimState& s, const Config& cfg) {
     auto dy     = s.dest_y;
     auto dq     = s.dest_q;
     auto mask   = s.mask;
+    auto bc = s.bounce_corr;
     const int Nx = cfg.Nx, Ny = cfg.Ny;
 
     Kokkos::deep_copy(f_new, 0.0);
@@ -87,7 +88,7 @@ inline void stream_bounce_back(SimState& s, const Config& cfg) {
         KOKKOS_LAMBDA(int x, int y) {
             if (mask(x, y) == 0) return;
             for (int q = 0; q < 9; q++) {
-                f_new(dx(x, y, q), dy(x, y, q), dq(x, y, q)) = f(x, y, q);
+                f_new(dx(x, y, q), dy(x, y, q), dq(x, y, q)) = f(x, y, q) + bc(x, y, q);
             }
         });
 }
