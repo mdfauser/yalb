@@ -44,11 +44,16 @@ inline void compute_velocity(SimState& s, const Lattice& lat, const Config& cfg)
         });
 }
 
-inline void collide(SimState& s, const Lattice& lat, const Config& cfg) {
+inline void collide_stream(SimState& s, const Lattice& lat, const Config& cfg) {
     auto f    = s.f;
     auto rho  = s.rho;
     auto u    = s.u;
+    auto f_new  = s.f_new;
+    auto dx     = s.dest_x;
+    auto dy     = s.dest_y;
+    auto dq     = s.dest_q;
     auto mask = s.mask;
+    auto bc = s.bounce_corr;
     auto w    = lat.w;
     auto cx   = lat.cx;
     auto cy   = lat.cy;
@@ -66,7 +71,8 @@ inline void collide(SimState& s, const Lattice& lat, const Config& cfg) {
             for (int q = 0; q < 9; q++) {
                 double cu   = cx[q] * ux + cy[q] * uy;
                 double f_eq = w[q] * rho_v * (1.0 + 3.0 * cu + 4.5 * cu * cu - 1.5 * udotu);
-                f(x, y, q) += -(f(x, y, q) - f_eq) / tau;
+                double f_col = f(x, y, q) - (f(x, y, q) - f_eq) / tau;
+                f_new(dx(x, y, q), dy(x, y, q), dq(x, y, q)) = f_col + bc(x, y, q);
             }
         });
 }
