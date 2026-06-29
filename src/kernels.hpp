@@ -59,21 +59,44 @@ inline void collide_stream(SimState& s, const Lattice& lat, const Config& cfg) {
     auto cy   = lat.cy;
     const int Nx = cfg.Nx, Ny = cfg.Ny;
     const double tau = cfg.tau;
+    auto opp = lat.opp;
+    auto wux = s.wall_ux;
+    auto wuy = s.wall_uy;
 
     Kokkos::parallel_for(
         Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0, 0}, {Nx, Ny}),
         KOKKOS_LAMBDA(int x, int y) {
-            if (mask(x, y) == 0) return;
-            double ux    = u(x, y, 0);
-            double uy    = u(x, y, 1);
-            double rho_v = rho(x, y);
-            double udotu = ux * ux + uy * uy;
-            for (int q = 0; q < 9; q++) {
-                double cu   = cx[q] * ux + cy[q] * uy;
-                double f_eq = w[q] * rho_v * (1.0 + 3.0 * cu + 4.5 * cu * cu - 1.5 * udotu);
-                double f_col = f(x, y, q) - (f(x, y, q) - f_eq) / tau;
-                f_new(dx(x, y, q), dy(x, y, q), dq(x, y, q)) = f_col + bc(x, y, q);
+        if (mask(x, y) == 0) return;
+        double rho = 0.0, ux = 0.0, uy = 0.0;
+        double f_local[9];
+
+        for (int q = 0; q < 9; q++) {
+            int xn = (x - cx[q] + Nx) % Nx;  
+            int yn = (y - cy[q] + Ny) % Ny;
+
+            if (mask(xn, yn) == 0) {
+                int qo = opp[q];
+                double cu_wall = cx[q] * wux(xn, yn) + cy[q] * wuy(xn, yn);
+                f_local[q] = f(x, y, qo) + 2.0 * w[qo] * (cu_wall / (1.0/3.0));
+            } else {
+                f_local[q] = f(xn, yn, q);
             }
+        }
+        for (int q = 0; q < 9; q++) {
+            rho += f_local[q];
+            ux  += cx[q] * f_local[q];
+            uy  += cy[q] * f_local[q];
+        }
+        ux /= rho;
+        uy /= rho;
+        double udotu = ux * ux + uy * uy;
+
+        for (int q = 0; q < 9; q++) {
+            double cu = cx[q] * ux + cy[q] * uy;
+            double f_eq = w[q] * rho * (1.0 + 3.0*cu + 4.5*cu*cu - 1.5*udotu);
+            f_new(x, y, q) = f_local[q] - (f_local[q] - f_eq) / tau;
+        }
+
         });
 }
 
@@ -99,7 +122,7 @@ inline void stream_bounce_back(SimState& s, const Config& cfg) {
         });
 }
 
-// Periodic streaming (kept for validation / shear-wave tests)
+// Periodic streaming
 inline void stream_periodic(SimState& s, const Lattice& lat, const Config& cfg) {
     auto f     = s.f;
     auto f_new = s.f_new;
@@ -120,4 +143,4 @@ inline void stream_periodic(SimState& s, const Lattice& lat, const Config& cfg) 
         });
 }
 
-} // namespace lbm
+}

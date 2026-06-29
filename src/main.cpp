@@ -29,7 +29,7 @@ int main(int argc, char** argv) {
                 Config bcfg = cfg;
                 bcfg.Nx = N;
                 bcfg.Ny = N;
-                bcfg.N_steps = std::max(200, 50000 / (N / 64));
+                bcfg.N_steps = std::max(200, 10000 / (N / 64));
 
                 Lattice  lat;
                 SimState s(bcfg);
@@ -86,11 +86,11 @@ int main(int argc, char** argv) {
 
                 if (step % cfg.diag_interval == 0) {
                     auto pre  = lbm::compute_momentum(s, lat, cfg);
-                    lbm::collide(s, lat, cfg);
+                    lbm::collide_stream(s, lat, cfg);
                     auto post = lbm::compute_momentum(s, lat, cfg);
                     lbm::print_momentum_check(pre, post, step);
                 } else {
-                    lbm::collide(s, lat, cfg);
+                    lbm::collide_stream(s, lat, cfg);
                 }
 
                 lbm::stream_bounce_back(s, cfg);

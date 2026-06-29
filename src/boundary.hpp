@@ -113,4 +113,4 @@ inline void init_density_bump(SimState& s, const Lattice& lat, const Config& cfg
         });
 }
 
-} // namespace lbm
+}
