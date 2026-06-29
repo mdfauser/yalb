@@ -37,13 +37,13 @@ int main(int argc, char** argv) {
                 lbm::initialize_mask(s, bcfg);
                 lbm::initialize_wall_velocity(s, bcfg);
                 lbm::setup_streaming_targets(s, lat, bcfg);
-                lbm::init_shear_wave(s, lat, bcfg);
+                //lbm::init_shear_wave(s, lat, bcfg);
 
                 for (int step = 0; step < n_warmup; step++) {
                     lbm::compute_density(s, bcfg);
                     lbm::compute_velocity(s, lat, bcfg);
                     lbm::collide_stream(s, lat, bcfg);
-                    lbm::stream_bounce_back(s, bcfg);
+                    // lbm::stream_bounce_back(s, bcfg);
                     s.swap_distributions();
                 }
                 Kokkos::fence();
@@ -53,7 +53,7 @@ int main(int argc, char** argv) {
                     lbm::compute_density(s, bcfg);
                     lbm::compute_velocity(s, lat, bcfg);
                     lbm::collide_stream(s, lat, bcfg);
-                    lbm::stream_bounce_back(s, bcfg);
+                    //lbm::stream_bounce_back(s, bcfg);
                     s.swap_distributions();
                 }
                 Kokkos::fence();
@@ -74,7 +74,7 @@ int main(int argc, char** argv) {
             lbm::initialize_mask(s, cfg);
             lbm::initialize_wall_velocity(s, cfg);
             lbm::setup_streaming_targets(s, lat, cfg);
-            lbm::init_shear_wave(s, lat, cfg);
+            //lbm::init_shear_wave(s, lat, cfg);
 
             double initial_mass = lbm::compute_mass(s, cfg);
             std::cout << std::setprecision(15)
@@ -93,7 +93,7 @@ int main(int argc, char** argv) {
                     lbm::collide_stream(s, lat, cfg);
                 }
 
-                lbm::stream_bounce_back(s, cfg);
+                // lbm::stream_bounce_back(s, cfg);
                 s.swap_distributions();
 
                 if (step % cfg.steady_check_interval == 0 && step > 0) {
