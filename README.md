@@ -109,7 +109,7 @@ Adding files to `src/` is straightforward: create your files, e.g. `lj.h` and
 
 ```cmake
 add_library(lib STATIC 
-    hello.cpp
+    main.cpp
     lj.cpp
 )
 ```

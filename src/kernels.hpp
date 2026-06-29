@@ -71,7 +71,7 @@ inline void collide_stream(SimState& s, const Lattice& lat, const Config& cfg) {
         double f_local[9];
 
         for (int q = 0; q < 9; q++) {
-            int xn = (x - cx[q] + Nx) % Nx;  
+            int xn = (x - cx[q] + Nx) % Nx;
             int yn = (y - cy[q] + Ny) % Ny;
 
             if (mask(xn, yn) == 0) {
@@ -100,6 +100,7 @@ inline void collide_stream(SimState& s, const Lattice& lat, const Config& cfg) {
         });
 }
 
+// deprecated
 inline void stream_bounce_back(SimState& s, const Config& cfg) {
     auto f      = s.f;
     auto f_new  = s.f_new;
