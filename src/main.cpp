@@ -11,32 +11,108 @@
 #include "kernels.hpp"
 #include "diagnostics.hpp"
 #include "io.hpp"
+#include <mpi.h>
+
+
+Decomp init_decomp(int Nx_global) {
+    Decomp d;
+    MPI_Comm_rank(MPI_COMM_WORLD, &d.rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &d.size);
+
+    d.Nx_global = Nx_global;
+    d.Nx_local = Nx_global / d.size;
+    d.x_start  = d.rank * d.Nx_local;
+
+    d.left_rank  = (d.rank == 0)          ? MPI_PROC_NULL : d.rank - 1;
+    d.right_rank = (d.rank == d.size - 1) ? MPI_PROC_NULL : d.rank + 1;
+
+    return d;
+}
 
 int main(int argc, char** argv) {
-    Config cfg;
-    bool benchmark_mode = (argc > 1 && std::string(argv[1]) == "bench");
 
+    MPI_Init(&argc, &argv);
+
+    int rank, size;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+
+    std::cout << "MPI process " << rank <<  " of " << size << " starting up.\n";
+
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    Config cfg;
+    if (cfg.Nx_global % size != 0) {
+        if (rank == 0) std::cerr << "Nx_global must be divisible by number of processes\n";
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+    Decomp dec = init_decomp(cfg.Nx_global);  // pretend our global grid is 1024
+    std::cout << "[rank " << dec.rank << "] guard check: rank==0 is "
+          << (dec.rank == 0) << "\n";
+    cfg.Nx_local =dec.Nx_local;
+    cfg.x_start = dec.x_start;
+    std::cout << "[rank " << dec.rank << "] "
+              << "Nx_local=" << dec.Nx_local
+              << " x_start=" << dec.x_start
+              << " neighbors: left=" << dec.left_rank
+              << " right=" << dec.right_rank << "\n";
+
+    bool benchmark_mode = (argc > 1 && std::string(argv[1]) == "bench");
     Kokkos::initialize(argc, argv);
     {
-        if (benchmark_mode) {
+        if (dec.rank == 0) {
             std::cout << "Backend: " << Kokkos::DefaultExecutionSpace::name() << "\n";
             std::cout << "size,Nx,Ny,steps,runtime_s,mlups\n";
+        }
 
-            const int sizes[]  = {64, 128, 256, 512, 1024, 2048, 4096};
+        if (benchmark_mode) {
+            const int sizes[]  = {1024}; // 64, 128, 256, 512, 1024, 2048, 4096
             const int n_warmup = 50;
 
             for (int N : sizes) {
                 Config bcfg = cfg;
-                bcfg.Nx = N;
+                bcfg.Nx_global = N;
                 bcfg.Ny = N;
                 bcfg.N_steps = std::max(200, 10000 / (N / 64));
 
                 Lattice  lat;
                 SimState s(bcfg);
 
-                lbm::initialize_mask(s, bcfg);
-                lbm::initialize_wall_velocity(s, bcfg);
-                lbm::setup_streaming_targets(s, lat, bcfg);
+                lbm::initialize_mask(s, bcfg, dec);
+                lbm::initialize_wall_velocity(s, bcfg, dec);
+                lbm::setup_streaming_targets(s, lat, bcfg, dec);
+                lbm::init_at_rest(s, lat, bcfg);
+                if (dec.rank == 0) {
+                    auto f_host = Kokkos::create_mirror_view(s.f);
+                    Kokkos::deep_copy(f_host, s.f);
+
+                    int counted_fluid = 0;
+                    double naive_sum = 0;
+                    double sum_at_one = 0;
+                    int weird_cells = 0;
+
+                    for (int x = 1; x < cfg.Nx_local + 1; x++) {
+                        for (int y = 0; y < cfg.Ny; y++) {
+                            double cell_mass = 0;
+                            for (int q = 0; q < 9; q++) cell_mass += f_host(x, y, q);
+                            naive_sum += cell_mass;
+                            if (cell_mass > 0.99 && cell_mass < 1.01) {
+                                sum_at_one += cell_mass;
+                                counted_fluid++;
+                            } else if (cell_mass != 0.0) {
+                                weird_cells++;
+                                if (weird_cells < 5) {
+                                    std::cout << "[rank 0] weird cell at x=" << x << " y=" << y
+                                              << " mass=" << cell_mass << "\n";
+                                }
+                            }
+                        }
+                    }
+                    std::cout << "[rank 0] fluid cells with mass~1: " << counted_fluid
+                              << "  weird cells: " << weird_cells
+                              << "  naive_sum: " << naive_sum << "\n";
+
+                }
 
                 for (int step = 0; step < n_warmup; step++) {
                     lbm::compute_density(s, bcfg);
@@ -56,21 +132,31 @@ int main(int argc, char** argv) {
                 Kokkos::fence();
                 auto end = std::chrono::high_resolution_clock::now();
 
-                double secs  = std::chrono::duration<double>(end - start).count();
-                double cells = double(bcfg.Nx) * double(bcfg.Ny);
-                double mlups = (cells * bcfg.N_steps) / (secs * 1e6);
+                double local_secs  = std::chrono::duration<double>(end - start).count();
+                double max_secs;
+                MPI_Allreduce(&local_secs, &max_secs, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
 
-                std::cout << N << "," << bcfg.Nx << "," << bcfg.Ny << ","
-                          << bcfg.N_steps << "," << secs << "," << mlups << "\n";
+                double local_mass = lbm::compute_local_mass(s, bcfg, dec);
+                std::cout << "[rank " << dec.rank << "] local mass: " << local_mass << "\n";
+
+                double cells = double(bcfg.Nx_global) * double(bcfg.Ny);
+                double mlups = (cells * bcfg.N_steps) / (max_secs * 1e6);
+
+                if (rank == 0) {
+                    std::cout << N << "," << bcfg.Nx_global << "," << bcfg.Ny << ","
+                              << bcfg.N_steps << "," << max_secs << "," << mlups << "\n";
+                }
             }
         }
         else {
             Lattice  lat;
             SimState s(cfg);
 
-            lbm::initialize_mask(s, cfg);
-            lbm::initialize_wall_velocity(s, cfg);
-            lbm::setup_streaming_targets(s, lat, cfg);
+            lbm::initialize_mask(s, cfg, dec);
+            lbm::initialize_wall_velocity(s, cfg, dec);
+            lbm::setup_streaming_targets(s, lat, cfg, dec);
+            lbm::init_at_rest(s, lat, cfg);
+
 
             double initial_mass = lbm::compute_mass(s, cfg);
             std::cout << std::setprecision(15)
@@ -114,5 +200,7 @@ int main(int argc, char** argv) {
         }
     }
     Kokkos::finalize();
+
+    MPI_Finalize();
     return 0;
 }

@@ -10,11 +10,25 @@ namespace lbm {
 
 inline double compute_mass(const SimState& s, const Config& cfg) {
     auto f = s.f;
-    const int Nx = cfg.Nx, Ny = cfg.Ny;
+    int Nx_global = cfg.Nx_global, Ny = cfg.Ny;
     double mass = 0.0;
 
     Kokkos::parallel_reduce(
-        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0, 0}, {Nx, Ny}),
+        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0, 0}, {Nx_global, Ny}),
+        KOKKOS_LAMBDA(int x, int y, double& m) {
+            for (int q = 0; q < 9; q++) m += f(x, y, q);
+        }, mass);
+
+    return mass;
+}
+
+inline double compute_local_mass(const SimState& s, const Config& cfg, const Decomp& dec) {
+    auto f = s.f;
+    int Nx_local = dec.Nx_local, Ny = cfg.Ny;
+    double mass = 0.0;
+
+    Kokkos::parallel_reduce(
+        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 0}, {Nx_local+1, Ny}),
         KOKKOS_LAMBDA(int x, int y, double& m) {
             for (int q = 0; q < 9; q++) m += f(x, y, q);
         }, mass);
@@ -30,11 +44,11 @@ inline Momentum compute_momentum(const SimState& s, const Lattice& lat,
     auto mask = s.mask;
     auto cx   = lat.cx;
     auto cy   = lat.cy;
-    const int Nx = cfg.Nx, Ny = cfg.Ny;
+    int Nx_global = cfg.Nx_global, Ny = cfg.Ny;
     double mx = 0.0, my = 0.0;
 
     Kokkos::parallel_reduce(
-        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0, 0}, {Nx, Ny}),
+        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0, 0}, {Nx_global, Ny}),
         KOKKOS_LAMBDA(int x, int y, double& pmx, double& pmy) {
             if (fluid_only && mask(x, y) == 0) return;
             for (int q = 0; q < 9; q++) {
@@ -49,11 +63,11 @@ inline Momentum compute_momentum(const SimState& s, const Lattice& lat,
 inline double check_steady_state(const SimState& s, const Config& cfg) {
     auto u     = s.u;
     auto u_old = s.u_old;
-    const int Nx = cfg.Nx, Ny = cfg.Ny;
+    int Nx_global = cfg.Nx_global, Ny = cfg.Ny;
     double max_diff = 0.0;
 
     Kokkos::parallel_reduce(
-        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0, 0}, {Nx, Ny}),
+        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0, 0}, {Nx_global, Ny}),
         KOKKOS_LAMBDA(int x, int y, double& md) {
             double dx = u(x, y, 0) - u_old(x, y, 0);
             double dy = u(x, y, 1) - u_old(x, y, 1);

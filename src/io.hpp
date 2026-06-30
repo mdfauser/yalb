@@ -17,7 +17,7 @@ inline void write_csv(const SimState& s, const Config& cfg, int step) {
     std::ofstream file(filename);
     file << "x,y,rho,ux,uy\n";
 
-    for (int x = 0; x < cfg.Nx; x++) {
+    for (int x = 0; x < cfg.Nx_global; x++) {
         for (int y = 0; y < cfg.Ny; y++) {
             file << x << ","
                  << y << ","
