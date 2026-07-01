@@ -94,6 +94,12 @@ int main(int argc, char** argv) {
                     lbm::compute_velocity(s, lat, bcfg);
                     lbm::collide_stream(s, lat, bcfg);
                     s.swap_distributions();
+                    
+                    if (step < 3) {
+                        double m = lbm::compute_local_mass(s, bcfg, dec_bench);
+                        std::cout << "[rank " << dec.rank << "] step " << step
+                                  << " mass: " << m << "\n" << std::flush;
+                    }
                 }
                 Kokkos::fence();
 

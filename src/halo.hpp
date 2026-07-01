@@ -14,7 +14,7 @@ void halo_exchange(SimState& s, const Config& cfg, const Decomp& dec) {
     auto rr_buf  = s.recv_right_buf;
     int Nx_local = dec.Nx_local;
     int Ny = f.extent(1);
-    
+
     // 1. Pack
     Kokkos::parallel_for(Ny, KOKKOS_LAMBDA(int y) {
             for (int q = 0; q < 9; q++) {
