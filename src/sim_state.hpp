@@ -2,8 +2,6 @@
 #include <Kokkos_Core.hpp>
 #include "config.hpp"
 
-// All simulation state in one place.
-// Functions take `SimState&` instead of a dozen individual Views.
 struct SimState {
     const int Nx_with_ghosts;
     Kokkos::View<double***> f;

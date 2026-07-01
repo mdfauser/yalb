@@ -24,7 +24,8 @@ inline double compute_mass(const SimState& s, const Config& cfg) {
 
 inline double compute_local_mass(const SimState& s, const Config& cfg, const Decomp& dec) {
     auto f = s.f;
-    int Nx_local = dec.Nx_local, Ny = cfg.Ny;
+    int Nx_local = dec.Nx_local;
+    int Ny = f.extent(1);   // ← use View's actual size, not cfg
     double mass = 0.0;
 
     Kokkos::parallel_reduce(
@@ -32,7 +33,6 @@ inline double compute_local_mass(const SimState& s, const Config& cfg, const Dec
         KOKKOS_LAMBDA(int x, int y, double& m) {
             for (int q = 0; q < 9; q++) m += f(x, y, q);
         }, mass);
-
     return mass;
 }
 

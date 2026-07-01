@@ -66,7 +66,7 @@ int main(int argc, char** argv) {
         }
 
         if (benchmark_mode) {
-            const int sizes[]  = {1024}; // 64, 128, 256, 512, 1024, 2048, 4096
+            const int sizes[]  = {64}; // 64, 128, 256, 512, 1024, 2048, 4096
             const int n_warmup = 50;
 
             for (int N : sizes) {
@@ -75,13 +75,32 @@ int main(int argc, char** argv) {
                 bcfg.Ny = N;
                 bcfg.N_steps = std::max(200, 10000 / (N / 64));
 
+                Decomp dec_bench = init_decomp(N);
+                bcfg.Nx_local = dec_bench.Nx_local;
+                bcfg.x_start  = dec_bench.x_start;
+
                 Lattice  lat;
                 SimState s(bcfg);
 
-                lbm::initialize_mask(s, bcfg, dec);
-                lbm::initialize_wall_velocity(s, bcfg, dec);
-                lbm::setup_streaming_targets(s, lat, bcfg, dec);
+            //    lbm::initialize_mask(s, bcfg, dec);
+                // lbm::initialize_wall_velocity(s, bcfg, dec);
+                // lbm::setup_streaming_targets(s, lat, bcfg, dec);
+                // lbm::init_at_rest(s, lat, bcfg);
+
+                if (dec.rank == 0) std::cout << "SimState built\n" << std::flush;
+
+                lbm::initialize_mask(s, bcfg, dec_bench);
+                if (dec.rank == 0) std::cout << "mask initialized\n" << std::flush;
+
+                lbm::initialize_wall_velocity(s, bcfg, dec_bench);
+                if (dec.rank == 0) std::cout << "wall velocity initialized\n" << std::flush;
+
+                lbm::setup_streaming_targets(s, lat, bcfg, dec_bench);
+                if (dec.rank == 0) std::cout << "streaming targets set\n" << std::flush;
+
                 lbm::init_at_rest(s, lat, bcfg);
+                if (dec.rank == 0) std::cout << "init at rest done\n" << std::flush;
+
                 if (dec.rank == 0) {
                     auto f_host = Kokkos::create_mirror_view(s.f);
                     Kokkos::deep_copy(f_host, s.f);
@@ -113,13 +132,16 @@ int main(int argc, char** argv) {
                               << "  naive_sum: " << naive_sum << "\n";
 
                 }
+                if (dec.rank == 0) std::cout << "debug block done\n" << std::flush;
 
                 for (int step = 0; step < n_warmup; step++) {
+                    if (dec.rank == 0 && step == 0) std::cout << "warmup starting\n" << std::flush;
                     lbm::compute_density(s, bcfg);
                     lbm::compute_velocity(s, lat, bcfg);
                     lbm::collide_stream(s, lat, bcfg);
                     s.swap_distributions();
                 }
+                if (dec.rank == 0) std::cout << "warmup done\n" << std::flush;
                 Kokkos::fence();
 
                 auto start = std::chrono::high_resolution_clock::now();
