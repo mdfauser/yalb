@@ -1,18 +1,19 @@
-#include <Kokkos_Core.hpp>
-#include <chrono>
-#include <iostream>
-#include <iomanip>
-#include <string>
-#include <algorithm>
+#include "boundary.hpp"
 #include "config.hpp"
+#include "diagnostics.hpp"
+#include "halo.hpp"
+#include "io.hpp"
+#include "kernels.hpp"
 #include "lattice.hpp"
 #include "sim_state.hpp"
-#include "boundary.hpp"
-#include "kernels.hpp"
-#include "diagnostics.hpp"
-#include "io.hpp"
+#include "halo.hpp"
+#include <Kokkos_Core.hpp>
+#include <algorithm>
+#include <chrono>
+#include <iomanip>
+#include <iostream>
 #include <mpi.h>
-
+#include <string>
 
 Decomp init_decomp(int Nx_global) {
     Decomp d;
@@ -82,70 +83,23 @@ int main(int argc, char** argv) {
                 Lattice  lat;
                 SimState s(bcfg);
 
-            //    lbm::initialize_mask(s, bcfg, dec);
-                // lbm::initialize_wall_velocity(s, bcfg, dec);
-                // lbm::setup_streaming_targets(s, lat, bcfg, dec);
-                // lbm::init_at_rest(s, lat, bcfg);
-
-                if (dec.rank == 0) std::cout << "SimState built\n" << std::flush;
-
                 lbm::initialize_mask(s, bcfg, dec_bench);
-                if (dec.rank == 0) std::cout << "mask initialized\n" << std::flush;
-
                 lbm::initialize_wall_velocity(s, bcfg, dec_bench);
-                if (dec.rank == 0) std::cout << "wall velocity initialized\n" << std::flush;
-
                 lbm::setup_streaming_targets(s, lat, bcfg, dec_bench);
-                if (dec.rank == 0) std::cout << "streaming targets set\n" << std::flush;
-
                 lbm::init_at_rest(s, lat, bcfg);
-                if (dec.rank == 0) std::cout << "init at rest done\n" << std::flush;
-
-                if (dec.rank == 0) {
-                    auto f_host = Kokkos::create_mirror_view(s.f);
-                    Kokkos::deep_copy(f_host, s.f);
-
-                    int counted_fluid = 0;
-                    double naive_sum = 0;
-                    double sum_at_one = 0;
-                    int weird_cells = 0;
-
-                    for (int x = 1; x < cfg.Nx_local + 1; x++) {
-                        for (int y = 0; y < cfg.Ny; y++) {
-                            double cell_mass = 0;
-                            for (int q = 0; q < 9; q++) cell_mass += f_host(x, y, q);
-                            naive_sum += cell_mass;
-                            if (cell_mass > 0.99 && cell_mass < 1.01) {
-                                sum_at_one += cell_mass;
-                                counted_fluid++;
-                            } else if (cell_mass != 0.0) {
-                                weird_cells++;
-                                if (weird_cells < 5) {
-                                    std::cout << "[rank 0] weird cell at x=" << x << " y=" << y
-                                              << " mass=" << cell_mass << "\n";
-                                }
-                            }
-                        }
-                    }
-                    std::cout << "[rank 0] fluid cells with mass~1: " << counted_fluid
-                              << "  weird cells: " << weird_cells
-                              << "  naive_sum: " << naive_sum << "\n";
-
-                }
-                if (dec.rank == 0) std::cout << "debug block done\n" << std::flush;
 
                 for (int step = 0; step < n_warmup; step++) {
-                    if (dec.rank == 0 && step == 0) std::cout << "warmup starting\n" << std::flush;
+                    lbm::halo_exchange(s, bcfg, dec_bench);
                     lbm::compute_density(s, bcfg);
                     lbm::compute_velocity(s, lat, bcfg);
                     lbm::collide_stream(s, lat, bcfg);
                     s.swap_distributions();
                 }
-                if (dec.rank == 0) std::cout << "warmup done\n" << std::flush;
                 Kokkos::fence();
 
                 auto start = std::chrono::high_resolution_clock::now();
                 for (int step = 0; step < bcfg.N_steps; step++) {
+                    lbm::halo_exchange(s, bcfg, dec_bench);
                     lbm::compute_density(s, bcfg);
                     lbm::compute_velocity(s, lat, bcfg);
                     lbm::collide_stream(s, lat, bcfg);
@@ -158,7 +112,7 @@ int main(int argc, char** argv) {
                 double max_secs;
                 MPI_Allreduce(&local_secs, &max_secs, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
 
-                double local_mass = lbm::compute_local_mass(s, bcfg, dec);
+                double local_mass = lbm::compute_local_mass(s, bcfg, dec_bench);
                 std::cout << "[rank " << dec.rank << "] local mass: " << local_mass << "\n";
 
                 double cells = double(bcfg.Nx_global) * double(bcfg.Ny);
@@ -185,6 +139,7 @@ int main(int argc, char** argv) {
                       << "Initial mass: " << initial_mass << "\n";
 
             for (int step = 0; step <= cfg.N_steps; step++) {
+                lbm::halo_exchange(s, cfg, dec);
                 lbm::compute_density(s, cfg);
                 lbm::compute_velocity(s, lat, cfg);
 

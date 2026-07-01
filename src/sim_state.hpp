@@ -18,6 +18,10 @@ struct SimState {
     Kokkos::View<double***> bounce_corr;
     Kokkos::View<double**>  wall_ux;
     Kokkos::View<double**>  wall_uy;
+    Kokkos::View<double*> send_left_buf;
+    Kokkos::View<double*> send_right_buf;
+    Kokkos::View<double*> recv_left_buf;
+    Kokkos::View<double*> recv_right_buf;
 
 
     explicit SimState(const Config &cfg)
@@ -33,7 +37,11 @@ struct SimState {
         dest_q    ("dest_q",      Nx_with_ghosts, cfg.Ny, 9),
         bounce_corr("bounce_corr", Nx_with_ghosts, cfg.Ny, 9),
         wall_ux   ("wall_ux",     Nx_with_ghosts, cfg.Ny),
-        wall_uy   ("wall_uy",     Nx_with_ghosts, cfg.Ny){
+        wall_uy   ("wall_uy",     Nx_with_ghosts, cfg.Ny),
+        send_left_buf ("send_l",  cfg.Ny * 9),
+        send_right_buf("send_r",  cfg.Ny * 9),
+        recv_left_buf ("recv_l",  cfg.Ny * 9),
+        recv_right_buf("recv_r",  cfg.Ny * 9){
     }
     // Swap f and f_new after streaming
     void swap_distributions() {
