@@ -16,8 +16,8 @@ inline double compute_mass(const SimState& s, const Config& cfg) {
     double local_mass = 0.0;
 
     Kokkos::parallel_reduce(
-        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 1}, {Ny_local + 1, Nx_local + 1}),
-        KOKKOS_LAMBDA(int y, int x, double& m) {
+        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 1}, {Nx_local + 1, Ny_local + 1}),
+        KOKKOS_LAMBDA(int x, int y, double& m) {
             for (int q = 0; q < 9; q++) m += f(x, y, q);
         }, local_mass);
 
@@ -33,8 +33,8 @@ inline double compute_local_mass(const SimState& s, const Config& cfg, const Dec
     double mass = 0.0;
 
     Kokkos::parallel_reduce(
-        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 1}, {Ny_local + 1, Nx_local + 1}),
-        KOKKOS_LAMBDA(int y, int x, double& m) {
+        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 1}, {Nx_local + 1, Ny_local + 1}),
+        KOKKOS_LAMBDA(int x, int y, double& m) {
             for (int q = 0; q < 9; q++) m += f(x, y, q);
         }, mass);
     return mass;
@@ -46,19 +46,17 @@ inline Momentum compute_momentum(const SimState& s, const Lattice& lat,
                                   const Config& cfg, bool fluid_only = true) {
     auto f    = s.f;
     auto mask = s.mask;
-    auto cx   = lat.cx;
-    auto cy   = lat.cy;
     const int Nx_local = cfg.Nx_local - 2;
     const int Ny_local = cfg.Ny_local - 2;
     double mx = 0.0, my = 0.0;
 
     Kokkos::parallel_reduce(
-        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 1}, {Ny_local + 1, Nx_local + 1}),
-        KOKKOS_LAMBDA(int y, int x, double& pmx, double& pmy) {
+        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 1}, {Nx_local + 1, Ny_local + 1}),
+        KOKKOS_LAMBDA(int x, int y, double& pmx, double& pmy) {
             if (fluid_only && mask(x, y) == 0) return;
             for (int q = 0; q < 9; q++) {
-                pmx += f(x, y, q) * cx[q];
-                pmy += f(x, y, q) * cy[q];
+                pmx += f(x, y, q) * D2Q9::cx[q];
+                pmy += f(x, y, q) * D2Q9::cy[q];
             }
         }, mx, my);
 
@@ -76,8 +74,8 @@ inline double check_steady_state(const SimState& s, const Config& cfg) {
     double local_max = 0.0;
 
     Kokkos::parallel_reduce(
-        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 1}, {Ny_local + 1, Nx_local + 1}),
-        KOKKOS_LAMBDA(int y, int x, double& md) {
+        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 1}, {Nx_local + 1, Ny_local + 1}),
+        KOKKOS_LAMBDA(int x, int y, double& md) {
             double dx = u(x, y, 0) - u_old(x, y, 0);
             double dy = u(x, y, 1) - u_old(x, y, 1);
             double d  = Kokkos::sqrt(dx * dx + dy * dy);

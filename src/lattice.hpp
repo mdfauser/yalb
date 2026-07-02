@@ -1,6 +1,18 @@
 #pragma once
 #include <Kokkos_Core.hpp>
 
+// Compile-time D2Q9 constants — safe to use in device lambdas.
+// nvcc places namespace-scope constexpr arrays in constant memory for device
+// code, giving broadcast L1-cached reads (all warp lanes hit the same q each
+// iteration, so this is a pure broadcast access — optimal for constant cache).
+namespace D2Q9 {
+    constexpr int    cx[9]  = { 0, 1, 0,-1, 0, 1,-1,-1, 1};
+    constexpr int    cy[9]  = { 0, 0, 1, 0,-1, 1, 1,-1,-1};
+    constexpr int    opp[9] = { 0, 3, 4, 1, 2, 7, 8, 5, 6};
+    constexpr double w[9]   = {4./9, 1./9, 1./9, 1./9, 1./9,
+                               1./36, 1./36, 1./36, 1./36};
+}
+
 // D2Q9 lattice velocities, weights, and opposite directions — all in one struct.
 // Pass `const Lattice&` instead of 5 separate Views.
 struct Lattice {
