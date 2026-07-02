@@ -7,32 +7,40 @@ namespace lbm {
 
 inline void initialize_mask(SimState& s, const Config& cfg, const Decomp& dec) {
     auto mask_loc = s.mask;
-    int x_start = dec.x_start;
-    int Nx_local = dec.Nx_local;
-    int Nx_global = cfg.Nx_global, Ny = cfg.Ny;
+    const int x_start   = dec.x_start;
+    const int y_start   = dec.y_start;
+    const int Nx_local  = dec.Nx_local;
+    const int Ny_local  = dec.Ny_local;
+    const int Nx_global = cfg.Nx_global;
+    const int Ny_global = cfg.Ny_global;
 
     Kokkos::parallel_for(
-    Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0, 0}, {Nx_local + 2, Ny}),
-    KOKKOS_LAMBDA(int x_local, int y) {
-        int x_global = x_start + x_local - 1;
-        mask_loc(x_local, y) = (x_global == 0
-                             || x_global == Nx_global - 1
-                             || y == 0
-                             || y == Ny - 1) ? 0 : 1;
-    });
+        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0, 0}, {Nx_local + 2, Ny_local + 2}),
+        KOKKOS_LAMBDA(int x_local, int y_local) {
+            int x_global = x_start + x_local - 1;
+            int y_global = y_start + y_local - 1;
+            mask_loc(x_local, y_local) = (x_global == 0
+                                       || x_global == Nx_global - 1
+                                       || y_global == 0
+                                       || y_global == Ny_global - 1) ? 0 : 1;
+        });
 }
 
 inline void initialize_wall_velocity(SimState& s, const Config& cfg, const Decomp& dec) {
     auto wux = s.wall_ux;
     auto wuy = s.wall_uy;
-    int Nx_local = dec.Nx_local, Ny = cfg.Ny;
-    const double lid = cfg.lid_speed;
+    const int y_start   = dec.y_start;
+    const int Nx_local  = dec.Nx_local;
+    const int Ny_local  = dec.Ny_local;
+    const int Ny_global = cfg.Ny_global;
+    const double lid    = cfg.lid_speed;
 
     Kokkos::parallel_for(
-        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0, 0}, {Nx_local + 2, Ny}),
-        KOKKOS_LAMBDA(int x, int y) {
-            wux(x, y) = (y == Ny - 1) ? lid : 0.0;
-            wuy(x, y) = 0.0;
+        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0, 0}, {Nx_local + 2, Ny_local + 2}),
+        KOKKOS_LAMBDA(int x_local, int y_local) {
+            int y_global = y_start + y_local - 1;
+            wux(x_local, y_local) = (y_global == Ny_global - 1) ? lid : 0.0;
+            wuy(x_local, y_local) = 0.0;
         });
 }
 
@@ -48,14 +56,16 @@ inline void setup_streaming_targets(SimState& s, const Lattice& lat, const Confi
     auto cy   = lat.cy;
     auto opp  = lat.opp;
     auto w    = lat.w;
-    int Nx_local = dec.Nx_local, Ny = cfg.Ny;
+    const int Nx_local = dec.Nx_local;
+    const int Ny_local = dec.Ny_local;
 
+    // Only interior cells stream; halos are populated by halo_exchange.
     Kokkos::parallel_for(
-        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0, 0}, {Nx_local + 2, Ny}),
+        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 1}, {Nx_local + 1, Ny_local + 1}),
         KOKKOS_LAMBDA(int x, int y) {
             for (int q = 0; q < 9; q++) {
-                int xn = (x + cx[q] + Nx_local) % Nx_local;
-                int yn = (y + cy[q] + Ny) % Ny;
+                int xn = x + cx[q];
+                int yn = y + cy[q];
                 bool is_wall = (mask(xn, yn) == 0);
 
                 dx(x, y, q) = is_wall ? x : xn;
@@ -75,72 +85,82 @@ void init_at_rest(SimState& s, const Lattice& lat, const Config& cfg) {
     auto u_loc    = s.u;
     auto mask_loc = s.mask;
     auto w_loc    = lat.w;
-    int Nx_local  = cfg.Nx_local;   // assumes you stored it in cfg
-
+    // cfg.Nx_local / cfg.Ny_local are halo-inclusive tile sizes
     Kokkos::parallel_for(
-        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0, 0}, {Nx_local + 2, cfg.Ny}),
-        KOKKOS_LAMBDA(int x_local, int y) {
-            if (mask_loc(x_local, y) == 0) {
-                rho_loc(x_local, y)  = 0.0;
-                u_loc(x_local, y, 0) = 0.0;
-                u_loc(x_local, y, 1) = 0.0;
-                for (int q = 0; q < 9; q++) f_loc(x_local, y, q) = 0.0;
+        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0, 0}, {cfg.Nx_local, cfg.Ny_local}),
+        KOKKOS_LAMBDA(int x_local, int y_local) {
+            if (mask_loc(x_local, y_local) == 0) {
+                rho_loc(x_local, y_local)  = 0.0;
+                u_loc(x_local, y_local, 0) = 0.0;
+                u_loc(x_local, y_local, 1) = 0.0;
+                for (int q = 0; q < 9; q++) f_loc(x_local, y_local, q) = 0.0;
                 return;
             }
-            rho_loc(x_local, y)  = 1.0;
-            u_loc(x_local, y, 0) = 0.0;
-            u_loc(x_local, y, 1) = 0.0;
-            for (int q = 0; q < 9; q++) f_loc(x_local, y, q) = w_loc(q);
+            rho_loc(x_local, y_local)  = 1.0;
+            u_loc(x_local, y_local, 0) = 0.0;
+            u_loc(x_local, y_local, 1) = 0.0;
+            for (int q = 0; q < 9; q++) f_loc(x_local, y_local, q) = w_loc(q);
         });
 }
 
-inline void init_shear_wave(SimState& s, const Lattice& lat, const Config& cfg) {
+inline void init_shear_wave(SimState& s, const Lattice& lat, const Config& cfg, const Decomp& dec) {
     auto f   = s.f;
     auto rho = s.rho;
     auto u   = s.u;
     auto w   = lat.w;
     auto cx  = lat.cx;
     auto cy  = lat.cy;
-    int Nx_local = cfg.Nx_local, Ny = cfg.Ny;
-    const double u0 = cfg.u0;
+    const int y_start   = dec.y_start;
+    const int Nx_local  = dec.Nx_local;
+    const int Ny_local  = dec.Ny_local;
+    const int Ny_global = cfg.Ny_global;
+    const double u0     = cfg.u0;
 
     Kokkos::parallel_for(
-        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 0}, {Nx_local + 1, Ny}),
-        KOKKOS_LAMBDA(int x, int y) {
+        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 1}, {Nx_local + 1, Ny_local + 1}),
+        KOKKOS_LAMBDA(int x_local, int y_local) {
+            int y_global = y_start + y_local - 1;
             double r  = 1.0;
-            double ux = u0 * Kokkos::sin(2.0 * M_PI * y / Ny);
+            double ux = u0 * Kokkos::sin(2.0 * M_PI * y_global / Ny_global);
             double uy = 0.0;
 
-            u(x, y, 0)  = ux;
-            u(x, y, 1)  = uy;
-            rho(x, y)   = r;
+            u(x_local, y_local, 0) = ux;
+            u(x_local, y_local, 1) = uy;
+            rho(x_local, y_local)  = r;
 
             double udotu = ux * ux + uy * uy;
             for (int q = 0; q < 9; q++) {
                 double cu = cx[q] * ux + cy[q] * uy;
-                f(x, y, q) = w[q] * r * (1.0 + 3.0 * cu + 4.5 * cu * cu - 1.5 * udotu);
+                f(x_local, y_local, q) = w[q] * r * (1.0 + 3.0 * cu + 4.5 * cu * cu - 1.5 * udotu);
             }
         });
 }
 
-inline void init_density_bump(SimState& s, const Lattice& lat, const Config& cfg) {
+inline void init_density_bump(SimState& s, const Lattice& lat, const Config& cfg, const Decomp& dec) {
     auto f   = s.f;
     auto rho = s.rho;
     auto u   = s.u;
     auto w   = lat.w;
-    int Nx_local = cfg.Nx_local, Ny = cfg.Ny;
+    const int x_start   = dec.x_start;
+    const int y_start   = dec.y_start;
+    const int Nx_local  = dec.Nx_local;
+    const int Ny_local  = dec.Ny_local;
+    const int Nx_global = cfg.Nx_global;
+    const int Ny_global = cfg.Ny_global;
 
     Kokkos::parallel_for(
-        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 0}, {Nx_local + 1, Ny}),
-        KOKKOS_LAMBDA(int x, int y) {
+        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 1}, {Nx_local + 1, Ny_local + 1}),
+        KOKKOS_LAMBDA(int x_local, int y_local) {
+            int x_global = x_start + x_local - 1;
+            int y_global = y_start + y_local - 1;
             double r = 1.0;
-            if (x == Nx_local / 4 && y == Ny / 2) r = 1.1;
-            if (x == 3 * Nx_local / 4 && y == Ny / 2) r = 0.9;
+            if (x_global == Nx_global / 4     && y_global == Ny_global / 2) r = 1.1;
+            if (x_global == 3 * Nx_global / 4 && y_global == Ny_global / 2) r = 0.9;
 
-            u(x, y, 0) = 0.0;
-            u(x, y, 1) = 0.0;
-            for (int q = 0; q < 9; q++) f(x, y, q) = w[q] * r;
-            rho(x, y) = r;
+            u(x_local, y_local, 0) = 0.0;
+            u(x_local, y_local, 1) = 0.0;
+            for (int q = 0; q < 9; q++) f(x_local, y_local, q) = w[q] * r;
+            rho(x_local, y_local) = r;
         });
 }
 

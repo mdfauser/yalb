@@ -9,12 +9,12 @@ inline void compute_density(SimState& s, const Config& cfg) {
     auto f    = s.f;
     auto rho  = s.rho;
     auto mask = s.mask;
-    int Nx_local = cfg.Nx_local, Ny = cfg.Ny;
+    const int Nx_local = cfg.Nx_local - 2;  // interior tile x-size
+    const int Ny_local = cfg.Ny_local - 2;  // interior tile y-size
 
-    // Loop only over INTERIOR cells: x in [1, Nx_local], skip ghosts
+    // Loop over INTERIOR cells: (x,y) in [1, Nx_local] x [1, Ny_local], skip halos
     Kokkos::parallel_for(
-        // start at 1 and end before the Nx_local + 1
-        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 0}, {Nx_local + 1, Ny}),
+        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 1}, {Nx_local + 1, Ny_local + 1}),
         KOKKOS_LAMBDA(int x, int y) {
             if (mask(x, y) == 0) return;
             double r = 0.0;
@@ -30,10 +30,11 @@ inline void compute_velocity(SimState& s, const Lattice& lat, const Config& cfg)
     auto mask = s.mask;
     auto cx   = lat.cx;
     auto cy   = lat.cy;
-    const int Nx_local = cfg.Nx_local, Ny = cfg.Ny;
+    const int Nx_local = cfg.Nx_local - 2;
+    const int Ny_local = cfg.Ny_local - 2;
 
     Kokkos::parallel_for(
-        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 0}, {Nx_local + 1, Ny}),
+        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 1}, {Nx_local + 1, Ny_local + 1}),
         KOKKOS_LAMBDA(int x, int y) {
             if (mask(x, y) == 0) return;
             double ux = 0.0, uy = 0.0;
@@ -59,22 +60,23 @@ inline void collide_stream(SimState& s, const Lattice& lat, const Config& cfg) {
     auto w    = lat.w;
     auto cx   = lat.cx;
     auto cy   = lat.cy;
-    const int Nx_local = cfg.Nx_local, Ny = cfg.Ny;
+    const int Nx_local = cfg.Nx_local - 2;
+    const int Ny_local = cfg.Ny_local - 2;
     const double tau = cfg.tau;
     auto opp = lat.opp;
     auto wux = s.wall_ux;
     auto wuy = s.wall_uy;
 
     Kokkos::parallel_for(
-        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 0}, {Nx_local + 1, Ny}),
+        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 1}, {Nx_local + 1, Ny_local + 1}),
         KOKKOS_LAMBDA(int x, int y) {
         if (mask(x, y) == 0) return;
         double rho = 0.0, ux = 0.0, uy = 0.0;
         double f_local[9];
 
         for (int q = 0; q < 9; q++) {
-            int xn = x - cx[q];                    // ghost cells cover [0] and [Nx_local+1]
-            int yn = (y - cy[q] + Ny) % Ny;
+            int xn = x - cx[q];   // ghost cells cover [0] and [Nx_local+1]
+            int yn = y - cy[q];   // ghost cells cover [0] and [Ny_local+1]
 
             if (mask(xn, yn) == 0) {
                 int qo = opp[q];
@@ -111,12 +113,13 @@ inline void stream_bounce_back(SimState& s, const Config& cfg) {
     auto dq     = s.dest_q;
     auto mask   = s.mask;
     auto bc = s.bounce_corr;
-    int Nx_local = cfg.Nx_local, Ny = cfg.Ny;
+    const int Nx_local = cfg.Nx_local - 2;
+    const int Ny_local = cfg.Ny_local - 2;
 
     Kokkos::deep_copy(f_new, 0.0);
 
     Kokkos::parallel_for(
-        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 0}, {Nx_local + 1, Ny}),
+        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 1}, {Nx_local + 1, Ny_local + 1}),
         KOKKOS_LAMBDA(int x, int y) {
             if (mask(x, y) == 0) return;
             for (int q = 0; q < 9; q++) {
@@ -131,16 +134,17 @@ inline void stream_periodic(SimState& s, const Lattice& lat, const Config& cfg) 
     auto f_new = s.f_new;
     auto cx    = lat.cx;
     auto cy    = lat.cy;
-    int Nx_local = cfg.Nx_local, Ny = cfg.Ny;
+    const int Nx_local = cfg.Nx_local - 2;
+    const int Ny_local = cfg.Ny_local - 2;
 
     Kokkos::deep_copy(f_new, 0.0);
 
     Kokkos::parallel_for(
-        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 0}, {Nx_local +1, Ny}),
+        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 1}, {Nx_local + 1, Ny_local + 1}),
         KOKKOS_LAMBDA(int x, int y) {
             for (int q = 0; q < 9; q++) {
                 int xn = (x + cx[q] + Nx_local) % Nx_local;
-                int yn = (y + cy[q] + Ny) % Ny;
+                int yn = (y + cy[q] + Ny_local) % Ny_local;
                 f_new(xn, yn, q) = f(x, y, q);
             }
         });
