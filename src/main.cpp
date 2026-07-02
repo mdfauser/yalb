@@ -94,12 +94,6 @@ int main(int argc, char** argv) {
                     lbm::compute_velocity(s, lat, bcfg);
                     lbm::collide_stream(s, lat, bcfg);
                     s.swap_distributions();
-                    
-                    if (step < 3) {
-                        double m = lbm::compute_local_mass(s, bcfg, dec_bench);
-                        std::cout << "[rank " << dec.rank << "] step " << step
-                                  << " mass: " << m << "\n" << std::flush;
-                    }
                 }
                 Kokkos::fence();
 
@@ -141,8 +135,9 @@ int main(int argc, char** argv) {
 
 
             double initial_mass = lbm::compute_mass(s, cfg);
-            std::cout << std::setprecision(15)
-                      << "Initial mass: " << initial_mass << "\n";
+            if (dec.rank == 0)
+                std::cout << std::setprecision(15)
+                          << "Initial mass: " << initial_mass << "\n";
 
             for (int step = 0; step <= cfg.N_steps; step++) {
                 lbm::halo_exchange(s, cfg, dec);
@@ -153,7 +148,7 @@ int main(int argc, char** argv) {
                     auto pre  = lbm::compute_momentum(s, lat, cfg);
                     lbm::collide_stream(s, lat, cfg);
                     auto post = lbm::compute_momentum(s, lat, cfg);
-                    lbm::print_momentum_check(pre, post, step);
+                    if (dec.rank == 0) lbm::print_momentum_check(pre, post, step);
                 } else {
                     lbm::collide_stream(s, lat, cfg);
                 }
@@ -162,22 +157,25 @@ int main(int argc, char** argv) {
 
                 if (step % cfg.steady_check_interval == 0 && step > 0) {
                     double diff = lbm::check_steady_state(s, cfg);
-                    std::cout << "step " << step << " max change: " << diff << "\n";
+                    if (dec.rank == 0)
+                        std::cout << "step " << step << " max change: " << diff << "\n";
                     if (diff < cfg.steady_threshold) {
-                        std::cout << "Steady state reached at step " << step << "\n";
+                        if (dec.rank == 0)
+                            std::cout << "Steady state reached at step " << step << "\n";
                         break;
                     }
                     Kokkos::deep_copy(s.u_old, s.u);
                 }
 
-                if (step % cfg.output_interval == 0) {
-                    lbm::write_csv(s, cfg, step);
-                }
+                // if (step % cfg.output_interval == 0) {
+                //     lbm::write_csv(s, cfg, step);
+                // }
 
                 if (step % cfg.diag_interval == 0) {
                     double mass = lbm::compute_mass(s, cfg);
-                    std::cout << std::setprecision(15)
-                              << "Current mass: " << mass << "\n";
+                    if (dec.rank == 0)
+                        std::cout << std::setprecision(15)
+                                  << "Current mass: " << mass << "\n";
                 }
             }
         }

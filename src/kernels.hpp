@@ -73,7 +73,7 @@ inline void collide_stream(SimState& s, const Lattice& lat, const Config& cfg) {
         double f_local[9];
 
         for (int q = 0; q < 9; q++) {
-            int xn = (x - cx[q] + Nx_local) % Nx_local;
+            int xn = x - cx[q];                    // ghost cells cover [0] and [Nx_local+1]
             int yn = (y - cy[q] + Ny) % Ny;
 
             if (mask(xn, yn) == 0) {

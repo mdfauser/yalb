@@ -2,6 +2,7 @@
 #include <iostream>
 #include <iomanip>
 #include <cmath>
+#include <mpi.h>
 #include "sim_state.hpp"
 #include "lattice.hpp"
 #include "config.hpp"
@@ -10,16 +11,18 @@ namespace lbm {
 
 inline double compute_mass(const SimState& s, const Config& cfg) {
     auto f = s.f;
-    int Nx_global = cfg.Nx_global, Ny = cfg.Ny;
-    double mass = 0.0;
+    int Nx_local = cfg.Nx_local, Ny = cfg.Ny;
+    double local_mass = 0.0;
 
     Kokkos::parallel_reduce(
-        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0, 0}, {Nx_global, Ny}),
+        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 0}, {Nx_local + 1, Ny}),
         KOKKOS_LAMBDA(int x, int y, double& m) {
             for (int q = 0; q < 9; q++) m += f(x, y, q);
-        }, mass);
+        }, local_mass);
 
-    return mass;
+    double global_mass = 0.0;
+    MPI_Allreduce(&local_mass, &global_mass, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+    return global_mass;
 }
 
 inline double compute_local_mass(const SimState& s, const Config& cfg, const Decomp& dec) {
@@ -44,11 +47,11 @@ inline Momentum compute_momentum(const SimState& s, const Lattice& lat,
     auto mask = s.mask;
     auto cx   = lat.cx;
     auto cy   = lat.cy;
-    int Nx_global = cfg.Nx_global, Ny = cfg.Ny;
+    int Nx_local = cfg.Nx_local, Ny = cfg.Ny;
     double mx = 0.0, my = 0.0;
 
     Kokkos::parallel_reduce(
-        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0, 0}, {Nx_global, Ny}),
+        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 0}, {Nx_local + 1, Ny}),
         KOKKOS_LAMBDA(int x, int y, double& pmx, double& pmy) {
             if (fluid_only && mask(x, y) == 0) return;
             for (int q = 0; q < 9; q++) {
@@ -57,25 +60,30 @@ inline Momentum compute_momentum(const SimState& s, const Lattice& lat,
             }
         }, mx, my);
 
-    return {mx, my};
+    double global[2] = {0.0, 0.0};
+    double local[2]  = {mx, my};
+    MPI_Allreduce(local, global, 2, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+    return {global[0], global[1]};
 }
 
 inline double check_steady_state(const SimState& s, const Config& cfg) {
     auto u     = s.u;
     auto u_old = s.u_old;
-    int Nx_global = cfg.Nx_global, Ny = cfg.Ny;
-    double max_diff = 0.0;
+    int Nx_local = cfg.Nx_local, Ny = cfg.Ny;
+    double local_max = 0.0;
 
     Kokkos::parallel_reduce(
-        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0, 0}, {Nx_global, Ny}),
+        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 0}, {Nx_local + 1, Ny}),
         KOKKOS_LAMBDA(int x, int y, double& md) {
             double dx = u(x, y, 0) - u_old(x, y, 0);
             double dy = u(x, y, 1) - u_old(x, y, 1);
             double d  = Kokkos::sqrt(dx * dx + dy * dy);
             if (d > md) md = d;
-        }, Kokkos::Max<double>(max_diff));
+        }, Kokkos::Max<double>(local_max));
 
-    return max_diff;
+    double global_max = 0.0;
+    MPI_Allreduce(&local_max, &global_max, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+    return global_max;
 }
 
 inline void print_momentum_check(const Momentum& pre, const Momentum& post, int step) {
