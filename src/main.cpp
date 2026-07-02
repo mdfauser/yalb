@@ -67,7 +67,7 @@ int main(int argc, char** argv) {
         }
 
         if (benchmark_mode) {
-            const int sizes[]  = {64}; // 64, 128, 256, 512, 1024, 2048, 4096
+            const int sizes[]  = {64, 128, 256, 512, 1024, 2048, 4096};
             const int n_warmup = 50;
 
             for (int N : sizes) {
