@@ -55,8 +55,8 @@ inline Momentum compute_momentum(const SimState& s, const Lattice& lat,
         KOKKOS_LAMBDA(int x, int y, double& pmx, double& pmy) {
             if (fluid_only && mask(x, y) == 0) return;
             for (int q = 0; q < 9; q++) {
-                pmx += f(x, y, q) * D2Q9::cx[q];
-                pmy += f(x, y, q) * D2Q9::cy[q];
+                pmx += f(x, y, q) * D2Q9::cx(q);
+                pmy += f(x, y, q) * D2Q9::cy(q);
             }
         }, mx, my);
 

@@ -1,16 +1,27 @@
 #pragma once
 #include <Kokkos_Core.hpp>
 
-// Compile-time D2Q9 constants — safe to use in device lambdas.
-// nvcc places namespace-scope constexpr arrays in constant memory for device
-// code, giving broadcast L1-cached reads (all warp lanes hit the same q each
-// iteration, so this is a pure broadcast access — optimal for constant cache).
+// D2Q9 constants as KOKKOS_INLINE_FUNCTION getters — compiled for both host
+// and device. With #pragma unroll on q-loops, nvcc sees compile-time q values
+// and folds these into register immediates (no memory traffic at all).
 namespace D2Q9 {
-    constexpr int    cx[9]  = { 0, 1, 0,-1, 0, 1,-1,-1, 1};
-    constexpr int    cy[9]  = { 0, 0, 1, 0,-1, 1, 1,-1,-1};
-    constexpr int    opp[9] = { 0, 3, 4, 1, 2, 7, 8, 5, 6};
-    constexpr double w[9]   = {4./9, 1./9, 1./9, 1./9, 1./9,
-                               1./36, 1./36, 1./36, 1./36};
+    KOKKOS_INLINE_FUNCTION constexpr int cx(int q) noexcept {
+        constexpr int v[9] = { 0, 1, 0,-1, 0, 1,-1,-1, 1};
+        return v[q];
+    }
+    KOKKOS_INLINE_FUNCTION constexpr int cy(int q) noexcept {
+        constexpr int v[9] = { 0, 0, 1, 0,-1, 1, 1,-1,-1};
+        return v[q];
+    }
+    KOKKOS_INLINE_FUNCTION constexpr int opp(int q) noexcept {
+        constexpr int v[9] = { 0, 3, 4, 1, 2, 7, 8, 5, 6};
+        return v[q];
+    }
+    KOKKOS_INLINE_FUNCTION constexpr double w(int q) noexcept {
+        constexpr double v[9] = {4./9, 1./9, 1./9, 1./9, 1./9,
+                                  1./36, 1./36, 1./36, 1./36};
+        return v[q];
+    }
 }
 
 // D2Q9 lattice velocities, weights, and opposite directions — all in one struct.
