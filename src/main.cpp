@@ -80,13 +80,13 @@ int main(int argc, char** argv) {
     bool benchmark_mode = (argc > 1 && std::string(argv[1]) == "bench");
     Kokkos::initialize(argc, argv);
     {
-        if (dec.rank == 0) {
-            std::cout << "Backend: " << Kokkos::DefaultExecutionSpace::name() << "\n";
-            std::cout << "size,Nx,Ny,steps,runtime_s,mlups\n";
-        }
+        // if (dec.rank == 0) {
+        //     std::cout << "Backend: " << Kokkos::DefaultExecutionSpace::name() << "\n";
+        //     std::cout << "size,Nx,Ny,steps,runtime_s,mlups\n";
+        // }
 
         if (benchmark_mode) {
-            const int sizes[]  = {64, 128, 256, 512, 1024, 2048, 4096};
+            const int sizes[]  = {1024, 2048, 4096};
             const int n_warmup = 50;
 
             for (int N : sizes) {
@@ -111,11 +111,11 @@ int main(int argc, char** argv) {
 
                 // Baseline mass (post-init, pre-warmup) for the conservation check.
                 double initial_mass = lbm::compute_mass(s, bcfg);
-                if (dec.rank == 0) {
-                    std::cout << std::setprecision(15)
-                              << "[N=" << N << "] initial global mass: "
-                              << initial_mass << "\n";
-                }
+                // if (dec.rank == 0) {
+                //     std::cout << std::setprecision(15)
+                //               << "[N=" << N << "] initial global mass: "
+                //               << initial_mass << "\n";
+                // }
 
                 for (int step = 0; step < n_warmup; step++) {
                     lbm::halo_exchange(s, bcfg, dec_bench);
@@ -125,13 +125,13 @@ int main(int argc, char** argv) {
                 Kokkos::fence();
 
                 double post_warmup_mass = lbm::compute_mass(s, bcfg);
-                if (dec.rank == 0) {
-                    std::cout << std::setprecision(15)
-                              << "[N=" << N << "] post-warmup global mass: "
-                              << post_warmup_mass
-                              << "  drift: " << (post_warmup_mass - initial_mass)
-                              << "\n";
-                }
+                // if (dec.rank == 0) {
+                //     std::cout << std::setprecision(15)
+                //               << "[N=" << N << "] post-warmup global mass: "
+                //               << post_warmup_mass
+                //               << "  drift: " << (post_warmup_mass - initial_mass)
+                //               << "\n";
+                // }
 
                 auto start = std::chrono::high_resolution_clock::now();
                 for (int step = 0; step < bcfg.N_steps; step++) {
