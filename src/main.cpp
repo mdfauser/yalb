@@ -109,6 +109,14 @@ int main(int argc, char** argv) {
                 lbm::setup_streaming_targets(s, lat, bcfg, dec_bench);
                 lbm::init_at_rest(s, lat, bcfg);
 
+                // Baseline mass (post-init, pre-warmup) for the conservation check.
+                double initial_mass = lbm::compute_mass(s, bcfg);
+                if (dec.rank == 0) {
+                    std::cout << std::setprecision(15)
+                              << "[N=" << N << "] initial global mass: "
+                              << initial_mass << "\n";
+                }
+
                 for (int step = 0; step < n_warmup; step++) {
                     lbm::halo_exchange(s, bcfg, dec_bench);
                     lbm::compute_density(s, bcfg);
@@ -117,6 +125,15 @@ int main(int argc, char** argv) {
                     s.swap_distributions();
                 }
                 Kokkos::fence();
+
+                double post_warmup_mass = lbm::compute_mass(s, bcfg);
+                if (dec.rank == 0) {
+                    std::cout << std::setprecision(15)
+                              << "[N=" << N << "] post-warmup global mass: "
+                              << post_warmup_mass
+                              << "  drift: " << (post_warmup_mass - initial_mass)
+                              << "\n";
+                }
 
                 auto start = std::chrono::high_resolution_clock::now();
                 for (int step = 0; step < bcfg.N_steps; step++) {
@@ -133,8 +150,21 @@ int main(int argc, char** argv) {
                 double max_secs;
                 MPI_Allreduce(&local_secs, &max_secs, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
 
+                // Per-rank mass to spot rank-imbalance or a single bad tile.
                 double local_mass = lbm::compute_local_mass(s, bcfg, dec_bench);
                 std::cout << "[rank " << dec.rank << "] local mass: " << local_mass << "\n";
+
+                // Global mass conservation summary (rank 0 only).
+                double final_mass = lbm::compute_mass(s, bcfg);
+                if (dec.rank == 0) {
+                    double abs_drift = final_mass - initial_mass;
+                    double rel_drift = abs_drift / initial_mass;
+                    std::cout << std::setprecision(15)
+                              << "[N=" << N << "] final global mass:   "
+                              << final_mass << "\n"
+                              << "[N=" << N << "] mass drift: abs="
+                              << abs_drift << " rel=" << rel_drift << "\n";
+                }
 
                 double cells = double(bcfg.Nx_global) * double(bcfg.Ny_global);
                 double mlups = (cells * bcfg.N_steps) / (max_secs * 1e6);
