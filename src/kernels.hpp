@@ -14,8 +14,8 @@ inline void compute_density(SimState& s, const Config& cfg) {
 
     // Loop over INTERIOR cells: (x,y) in [1, Nx_local] x [1, Ny_local], skip halos
     Kokkos::parallel_for(
-        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 1}, {Nx_local + 1, Ny_local + 1}),
-        KOKKOS_LAMBDA(int x, int y) {
+        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 1}, {Ny_local + 1, Nx_local + 1}),
+        KOKKOS_LAMBDA(int y, int x) {
             if (mask(x, y) == 0) return;
             double r = 0.0;
             for (int q = 0; q < 9; q++) r += f(x, y, q);
@@ -34,8 +34,8 @@ inline void compute_velocity(SimState& s, const Lattice& lat, const Config& cfg)
     const int Ny_local = cfg.Ny_local - 2;
 
     Kokkos::parallel_for(
-        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 1}, {Nx_local + 1, Ny_local + 1}),
-        KOKKOS_LAMBDA(int x, int y) {
+        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 1}, {Ny_local + 1, Nx_local + 1}),
+        KOKKOS_LAMBDA(int y, int x) {
             if (mask(x, y) == 0) return;
             double ux = 0.0, uy = 0.0;
             for (int q = 0; q < 9; q++) {
@@ -48,9 +48,9 @@ inline void compute_velocity(SimState& s, const Lattice& lat, const Config& cfg)
 }
 
 inline void collide_stream(SimState& s, const Lattice& lat, const Config& cfg) {
-    auto f    = s.f;
-    auto rho  = s.rho;
-    auto u    = s.u;
+    auto f      = s.f;
+    auto rho_v  = s.rho;
+    auto u_v    = s.u;
     auto f_new  = s.f_new;
     auto dx     = s.dest_x;
     auto dy     = s.dest_y;
@@ -68,8 +68,8 @@ inline void collide_stream(SimState& s, const Lattice& lat, const Config& cfg) {
     auto wuy = s.wall_uy;
 
     Kokkos::parallel_for(
-        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 1}, {Nx_local + 1, Ny_local + 1}),
-        KOKKOS_LAMBDA(int x, int y) {
+        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 1}, {Ny_local + 1, Nx_local + 1}),
+        KOKKOS_LAMBDA(int y, int x) {
         if (mask(x, y) == 0) return;
         double rho = 0.0, ux = 0.0, uy = 0.0;
         double f_local[9];
@@ -93,6 +93,9 @@ inline void collide_stream(SimState& s, const Lattice& lat, const Config& cfg) {
         }
         ux /= rho;
         uy /= rho;
+        rho_v(x, y)    = rho;
+        u_v(x, y, 0)   = ux;
+        u_v(x, y, 1)   = uy;
         double udotu = ux * ux + uy * uy;
 
         for (int q = 0; q < 9; q++) {
@@ -119,8 +122,8 @@ inline void stream_bounce_back(SimState& s, const Config& cfg) {
     Kokkos::deep_copy(f_new, 0.0);
 
     Kokkos::parallel_for(
-        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 1}, {Nx_local + 1, Ny_local + 1}),
-        KOKKOS_LAMBDA(int x, int y) {
+        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 1}, {Ny_local + 1, Nx_local + 1}),
+        KOKKOS_LAMBDA(int y, int x) {
             if (mask(x, y) == 0) return;
             for (int q = 0; q < 9; q++) {
                 f_new(dx(x, y, q), dy(x, y, q), dq(x, y, q)) = f(x, y, q) + bc(x, y, q);
@@ -140,8 +143,8 @@ inline void stream_periodic(SimState& s, const Lattice& lat, const Config& cfg) 
     Kokkos::deep_copy(f_new, 0.0);
 
     Kokkos::parallel_for(
-        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 1}, {Nx_local + 1, Ny_local + 1}),
-        KOKKOS_LAMBDA(int x, int y) {
+        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 1}, {Ny_local + 1, Nx_local + 1}),
+        KOKKOS_LAMBDA(int y, int x) {
             for (int q = 0; q < 9; q++) {
                 int xn = (x + cx[q] + Nx_local) % Nx_local;
                 int yn = (y + cy[q] + Ny_local) % Ny_local;

@@ -119,8 +119,6 @@ int main(int argc, char** argv) {
 
                 for (int step = 0; step < n_warmup; step++) {
                     lbm::halo_exchange(s, bcfg, dec_bench);
-                    lbm::compute_density(s, bcfg);
-                    lbm::compute_velocity(s, lat, bcfg);
                     lbm::collide_stream(s, lat, bcfg);
                     s.swap_distributions();
                 }
@@ -138,8 +136,6 @@ int main(int argc, char** argv) {
                 auto start = std::chrono::high_resolution_clock::now();
                 for (int step = 0; step < bcfg.N_steps; step++) {
                     lbm::halo_exchange(s, bcfg, dec_bench);
-                    lbm::compute_density(s, bcfg);
-                    lbm::compute_velocity(s, lat, bcfg);
                     lbm::collide_stream(s, lat, bcfg);
                     s.swap_distributions();
                 }

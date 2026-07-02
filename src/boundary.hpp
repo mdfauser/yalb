@@ -15,8 +15,8 @@ inline void initialize_mask(SimState& s, const Config& cfg, const Decomp& dec) {
     const int Ny_global = cfg.Ny_global;
 
     Kokkos::parallel_for(
-        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0, 0}, {Nx_local + 2, Ny_local + 2}),
-        KOKKOS_LAMBDA(int x_local, int y_local) {
+        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0, 0}, {Ny_local + 2, Nx_local + 2}),
+        KOKKOS_LAMBDA(int y_local, int x_local) {
             int x_global = x_start + x_local - 1;
             int y_global = y_start + y_local - 1;
             mask_loc(x_local, y_local) = (x_global == 0
@@ -36,8 +36,8 @@ inline void initialize_wall_velocity(SimState& s, const Config& cfg, const Decom
     const double lid    = cfg.lid_speed;
 
     Kokkos::parallel_for(
-        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0, 0}, {Nx_local + 2, Ny_local + 2}),
-        KOKKOS_LAMBDA(int x_local, int y_local) {
+        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0, 0}, {Ny_local + 2, Nx_local + 2}),
+        KOKKOS_LAMBDA(int y_local, int x_local) {
             int y_global = y_start + y_local - 1;
             wux(x_local, y_local) = (y_global == Ny_global - 1) ? lid : 0.0;
             wuy(x_local, y_local) = 0.0;
@@ -61,8 +61,8 @@ inline void setup_streaming_targets(SimState& s, const Lattice& lat, const Confi
 
     // Only interior cells stream; halos are populated by halo_exchange.
     Kokkos::parallel_for(
-        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 1}, {Nx_local + 1, Ny_local + 1}),
-        KOKKOS_LAMBDA(int x, int y) {
+        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 1}, {Ny_local + 1, Nx_local + 1}),
+        KOKKOS_LAMBDA(int y, int x) {
             for (int q = 0; q < 9; q++) {
                 int xn = x + cx[q];
                 int yn = y + cy[q];
@@ -87,8 +87,8 @@ void init_at_rest(SimState& s, const Lattice& lat, const Config& cfg) {
     auto w_loc    = lat.w;
     // cfg.Nx_local / cfg.Ny_local are halo-inclusive tile sizes
     Kokkos::parallel_for(
-        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0, 0}, {cfg.Nx_local, cfg.Ny_local}),
-        KOKKOS_LAMBDA(int x_local, int y_local) {
+        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0, 0}, {cfg.Ny_local, cfg.Nx_local}),
+        KOKKOS_LAMBDA(int y_local, int x_local) {
             if (mask_loc(x_local, y_local) == 0) {
                 rho_loc(x_local, y_local)  = 0.0;
                 u_loc(x_local, y_local, 0) = 0.0;
@@ -117,8 +117,8 @@ inline void init_shear_wave(SimState& s, const Lattice& lat, const Config& cfg, 
     const double u0     = cfg.u0;
 
     Kokkos::parallel_for(
-        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 1}, {Nx_local + 1, Ny_local + 1}),
-        KOKKOS_LAMBDA(int x_local, int y_local) {
+        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 1}, {Ny_local + 1, Nx_local + 1}),
+        KOKKOS_LAMBDA(int y_local, int x_local) {
             int y_global = y_start + y_local - 1;
             double r  = 1.0;
             double ux = u0 * Kokkos::sin(2.0 * M_PI * y_global / Ny_global);
@@ -149,8 +149,8 @@ inline void init_density_bump(SimState& s, const Lattice& lat, const Config& cfg
     const int Ny_global = cfg.Ny_global;
 
     Kokkos::parallel_for(
-        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 1}, {Nx_local + 1, Ny_local + 1}),
-        KOKKOS_LAMBDA(int x_local, int y_local) {
+        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 1}, {Ny_local + 1, Nx_local + 1}),
+        KOKKOS_LAMBDA(int y_local, int x_local) {
             int x_global = x_start + x_local - 1;
             int y_global = y_start + y_local - 1;
             double r = 1.0;
