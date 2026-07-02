@@ -11,11 +11,12 @@ namespace lbm {
 
 inline double compute_mass(const SimState& s, const Config& cfg) {
     auto f = s.f;
-    int Nx_local = cfg.Nx_local, Ny = cfg.Ny;
+    const int Nx_local = cfg.Nx_local - 2;   // interior tile size
+    const int Ny_local = cfg.Ny_local - 2;
     double local_mass = 0.0;
 
     Kokkos::parallel_reduce(
-        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 0}, {Nx_local + 1, Ny}),
+        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 1}, {Nx_local + 1, Ny_local + 1}),
         KOKKOS_LAMBDA(int x, int y, double& m) {
             for (int q = 0; q < 9; q++) m += f(x, y, q);
         }, local_mass);
@@ -27,12 +28,12 @@ inline double compute_mass(const SimState& s, const Config& cfg) {
 
 inline double compute_local_mass(const SimState& s, const Config& cfg, const Decomp& dec) {
     auto f = s.f;
-    int Nx_local = dec.Nx_local;
-    int Ny = f.extent(1);   // ← use View's actual size, not cfg
+    const int Nx_local = dec.Nx_local;   // interior tile size
+    const int Ny_local = dec.Ny_local;
     double mass = 0.0;
 
     Kokkos::parallel_reduce(
-        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 0}, {Nx_local+1, Ny}),
+        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 1}, {Nx_local + 1, Ny_local + 1}),
         KOKKOS_LAMBDA(int x, int y, double& m) {
             for (int q = 0; q < 9; q++) m += f(x, y, q);
         }, mass);
@@ -47,11 +48,12 @@ inline Momentum compute_momentum(const SimState& s, const Lattice& lat,
     auto mask = s.mask;
     auto cx   = lat.cx;
     auto cy   = lat.cy;
-    int Nx_local = cfg.Nx_local, Ny = cfg.Ny;
+    const int Nx_local = cfg.Nx_local - 2;
+    const int Ny_local = cfg.Ny_local - 2;
     double mx = 0.0, my = 0.0;
 
     Kokkos::parallel_reduce(
-        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 0}, {Nx_local + 1, Ny}),
+        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 1}, {Nx_local + 1, Ny_local + 1}),
         KOKKOS_LAMBDA(int x, int y, double& pmx, double& pmy) {
             if (fluid_only && mask(x, y) == 0) return;
             for (int q = 0; q < 9; q++) {
@@ -69,11 +71,12 @@ inline Momentum compute_momentum(const SimState& s, const Lattice& lat,
 inline double check_steady_state(const SimState& s, const Config& cfg) {
     auto u     = s.u;
     auto u_old = s.u_old;
-    int Nx_local = cfg.Nx_local, Ny = cfg.Ny;
+    const int Nx_local = cfg.Nx_local - 2;
+    const int Ny_local = cfg.Ny_local - 2;
     double local_max = 0.0;
 
     Kokkos::parallel_reduce(
-        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 0}, {Nx_local + 1, Ny}),
+        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 1}, {Nx_local + 1, Ny_local + 1}),
         KOKKOS_LAMBDA(int x, int y, double& md) {
             double dx = u(x, y, 0) - u_old(x, y, 0);
             double dy = u(x, y, 1) - u_old(x, y, 1);
