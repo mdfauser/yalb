@@ -15,17 +15,32 @@
 #include <mpi.h>
 #include <string>
 
-Decomp init_decomp(int Nx_global) {
+Decomp init_decomp(int Nx_global, int Ny_global) {
     Decomp d;
     MPI_Comm_rank(MPI_COMM_WORLD, &d.rank);
     MPI_Comm_size(MPI_COMM_WORLD, &d.size);
 
     d.Nx_global = Nx_global;
-    d.Nx_local = Nx_global / d.size;
-    d.x_start  = d.rank * d.Nx_local;
+    d.Ny_global = Ny_global;
 
-    d.left_rank  = (d.rank == 0)          ? MPI_PROC_NULL : d.rank - 1;
-    d.right_rank = (d.rank == d.size - 1) ? MPI_PROC_NULL : d.rank + 1;
+    int dims[2] = {0, 0};
+    MPI_Dims_create(d.size, 2, dims);
+    d.px = dims[0];
+    d.py = dims[1];
+
+    d.rank_x = d.rank % d.px;
+    d.rank_y = d.rank / d.px;
+
+    d.Nx_local = Nx_global / d.px;
+    d.Ny_local = Ny_global / d.py;
+
+    d.x_start = d.rank_x * d.Nx_local;
+    d.y_start = d.rank_y * d.Ny_local;
+
+    d.left_rank   = (d.rank_x == 0)        ? MPI_PROC_NULL : d.rank - 1;
+    d.right_rank  = (d.rank_x == d.px - 1) ? MPI_PROC_NULL : d.rank + 1;
+    d.bottom_rank = (d.rank_y == 0)        ? MPI_PROC_NULL : d.rank - d.px;
+    d.top_rank    = (d.rank_y == d.py - 1) ? MPI_PROC_NULL : d.rank + d.px;
 
     return d;
 }
@@ -43,20 +58,24 @@ int main(int argc, char** argv) {
     MPI_Barrier(MPI_COMM_WORLD);
 
     Config cfg;
-    if (cfg.Nx_global % size != 0) {
-        if (rank == 0) std::cerr << "Nx_global must be divisible by number of processes\n";
+    Decomp dec = init_decomp(cfg.Nx_global, cfg.Ny_global);
+    if (cfg.Nx_global % dec.px != 0 || cfg.Ny_global % dec.py != 0) {
+        if (rank == 0)
+            std::cerr << "Nx_global must be divisible by px=" << dec.px
+                      << " and Ny_global by py=" << dec.py << "\n";
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
-    Decomp dec = init_decomp(cfg.Nx_global);  // pretend our global grid is 1024
-    std::cout << "[rank " << dec.rank << "] guard check: rank==0 is "
-          << (dec.rank == 0) << "\n";
-    cfg.Nx_local =dec.Nx_local;
-    cfg.x_start = dec.x_start;
+    cfg.Nx_local = dec.Nx_local + 2;
+    cfg.Ny_local = dec.Ny_local + 2;
+    cfg.x_start  = dec.x_start;
+    cfg.y_start  = dec.y_start;
     std::cout << "[rank " << dec.rank << "] "
-              << "Nx_local=" << dec.Nx_local
-              << " x_start=" << dec.x_start
-              << " neighbors: left=" << dec.left_rank
-              << " right=" << dec.right_rank << "\n";
+              << "grid=" << dec.px << "x" << dec.py
+              << " coord=(" << dec.rank_x << "," << dec.rank_y << ")"
+              << " tile=" << dec.Nx_local << "x" << dec.Ny_local
+              << " start=(" << dec.x_start << "," << dec.y_start << ")"
+              << " neighbors: L=" << dec.left_rank << " R=" << dec.right_rank
+              << " B=" << dec.bottom_rank << " T=" << dec.top_rank << "\n";
 
     bool benchmark_mode = (argc > 1 && std::string(argv[1]) == "bench");
     Kokkos::initialize(argc, argv);
@@ -73,12 +92,14 @@ int main(int argc, char** argv) {
             for (int N : sizes) {
                 Config bcfg = cfg;
                 bcfg.Nx_global = N;
-                bcfg.Ny = N;
+                bcfg.Ny_global = N;
                 bcfg.N_steps = std::max(200, 10000 / (N / 64));
 
-                Decomp dec_bench = init_decomp(N);
-                bcfg.Nx_local = dec_bench.Nx_local;
+                Decomp dec_bench = init_decomp(N, N);
+                bcfg.Nx_local = dec_bench.Nx_local + 2;
+                bcfg.Ny_local = dec_bench.Ny_local + 2;
                 bcfg.x_start  = dec_bench.x_start;
+                bcfg.y_start  = dec_bench.y_start;
 
                 Lattice  lat;
                 SimState s(bcfg);
@@ -115,11 +136,11 @@ int main(int argc, char** argv) {
                 double local_mass = lbm::compute_local_mass(s, bcfg, dec_bench);
                 std::cout << "[rank " << dec.rank << "] local mass: " << local_mass << "\n";
 
-                double cells = double(bcfg.Nx_global) * double(bcfg.Ny);
+                double cells = double(bcfg.Nx_global) * double(bcfg.Ny_global);
                 double mlups = (cells * bcfg.N_steps) / (max_secs * 1e6);
 
                 if (rank == 0) {
-                    std::cout << N << "," << bcfg.Nx_global << "," << bcfg.Ny << ","
+                    std::cout << N << "," << bcfg.Nx_global << "," << bcfg.Ny_global << ","
                               << bcfg.N_steps << "," << max_secs << "," << mlups << "\n";
                 }
             }
