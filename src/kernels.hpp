@@ -97,4 +97,51 @@ inline void collide_stream(SimState& s, const Lattice& lat, const Config& cfg) {
         });
 }
 
+inline void collide_stream_bench(SimState& s, const Lattice& lat, const Config& cfg) {
+    auto f      = s.f;
+    auto f_new  = s.f_new;
+    auto mask   = s.mask;
+    auto wux    = s.wall_ux;
+    auto wuy    = s.wall_uy;
+    const int Nx_local = cfg.Nx_local - 2;
+    const int Ny_local = cfg.Ny_local - 2;
+    const double tau = cfg.tau;
+
+    Kokkos::parallel_for(
+        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 1}, {Nx_local + 1, Ny_local + 1}),
+        KOKKOS_LAMBDA(int x, int y) {
+        if (mask(x, y) == 0) return;
+        double rho = 0.0, ux = 0.0, uy = 0.0;
+        double f_local[9];
+
+        for (int q = 0; q < 9; q++) {
+            int xn = x - D2Q9::cx(q);
+            int yn = y - D2Q9::cy(q);
+
+            if (mask(xn, yn) == 0) {
+                int qo = D2Q9::opp(q);
+                double cu_wall = D2Q9::cx(q) * wux(xn, yn) + D2Q9::cy(q) * wuy(xn, yn);
+                f_local[q] = f(x, y, qo) + 2.0 * D2Q9::w(qo) * (cu_wall / (1.0/3.0));
+            } else {
+                f_local[q] = f(xn, yn, q);
+            }
+        }
+        for (int q = 0; q < 9; q++) {
+            rho += f_local[q];
+            ux  += D2Q9::cx(q) * f_local[q];
+            uy  += D2Q9::cy(q) * f_local[q];
+        }
+        ux /= rho;
+        uy /= rho;
+        double udotu = ux * ux + uy * uy;
+
+        for (int q = 0; q < 9; q++) {
+            double cu = D2Q9::cx(q) * ux + D2Q9::cy(q) * uy;
+            double f_eq = D2Q9::w(q) * rho * (1.0 + 3.0*cu + 4.5*cu*cu - 1.5*udotu);
+            f_new(x, y, q) = f_local[q] - (f_local[q] - f_eq) / tau;
+        }
+
+        });
+}
+
 }

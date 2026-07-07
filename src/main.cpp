@@ -119,7 +119,7 @@ int main(int argc, char** argv) {
 
                 for (int step = 0; step < n_warmup; step++) {
                     lbm::halo_exchange(s, bcfg, dec_bench);
-                    lbm::collide_stream(s, lat, bcfg);
+                    lbm::collide_stream_bench(s, lat, bcfg);
                     s.swap_distributions();
                 }
                 Kokkos::fence();
@@ -136,7 +136,7 @@ int main(int argc, char** argv) {
                 auto start = std::chrono::high_resolution_clock::now();
                 for (int step = 0; step < bcfg.N_steps; step++) {
                     lbm::halo_exchange(s, bcfg, dec_bench);
-                    lbm::collide_stream(s, lat, bcfg);
+                    lbm::collide_stream_bench(s, lat, bcfg);
                     s.swap_distributions();
                 }
                 Kokkos::fence();
