@@ -12,10 +12,6 @@ struct SimState {
 
     // boundary
     Kokkos::View<int**>     mask;
-    Kokkos::View<int***>    dest_x;
-    Kokkos::View<int***>    dest_y;
-    Kokkos::View<int***>    dest_q;
-    Kokkos::View<double***> bounce_corr;
     Kokkos::View<double**>  wall_ux;
     Kokkos::View<double**>  wall_uy;
 
@@ -35,10 +31,6 @@ struct SimState {
           u           ("u",           cfg.Nx_local, cfg.Ny_local, 2),
           u_old       ("u_old",       cfg.Nx_local, cfg.Ny_local, 2),
           mask        ("mask",        cfg.Nx_local, cfg.Ny_local),
-          dest_x      ("dest_x",      cfg.Nx_local, cfg.Ny_local, 9),
-          dest_y      ("dest_y",      cfg.Nx_local, cfg.Ny_local, 9),
-          dest_q      ("dest_q",      cfg.Nx_local, cfg.Ny_local, 9),
-          bounce_corr ("bounce_corr", cfg.Nx_local, cfg.Ny_local, 9),
           wall_ux     ("wall_ux",     cfg.Nx_local, cfg.Ny_local),
           wall_uy     ("wall_uy",     cfg.Nx_local, cfg.Ny_local),
           send_left_buf  ("send_l",   cfg.Ny_local * 9),

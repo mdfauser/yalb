@@ -44,40 +44,6 @@ inline void initialize_wall_velocity(SimState& s, const Config& cfg, const Decom
         });
 }
 
-inline void setup_streaming_targets(SimState& s, const Lattice& lat, const Config& cfg, const Decomp& dec) {
-    auto dx   = s.dest_x;
-    auto dy   = s.dest_y;
-    auto dq   = s.dest_q;
-    auto mask = s.mask;
-    auto bc   = s.bounce_corr;
-    auto wux  = s.wall_ux;
-    auto wuy  = s.wall_uy;
-    auto cx   = lat.cx;
-    auto cy   = lat.cy;
-    auto opp  = lat.opp;
-    auto w    = lat.w;
-    const int Nx_local = dec.Nx_local;
-    const int Ny_local = dec.Ny_local;
-
-    // Only interior cells stream; halos are populated by halo_exchange.
-    Kokkos::parallel_for(
-        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 1}, {Nx_local + 1, Ny_local + 1}),
-        KOKKOS_LAMBDA(int x, int y) {
-            for (int q = 0; q < 9; q++) {
-                int xn = x + cx[q];
-                int yn = y + cy[q];
-                bool is_wall = (mask(xn, yn) == 0);
-
-                dx(x, y, q) = is_wall ? x : xn;
-                dy(x, y, q) = is_wall ? y : yn;
-                dq(x, y, q) = is_wall ? opp[q] : q;
-
-                double cs2     = 1.0 / 3.0;
-                double cu_wall = cx[q] * wux(xn, yn) + cy[q] * wuy(xn, yn);
-                bc(x, y, q)   = is_wall ? -2.0 * w[q] * 1.0 * (cu_wall / cs2) : 0.0;
-            }
-        });
-}
 
 void init_at_rest(SimState& s, const Lattice& lat, const Config& cfg) {
     auto f_loc    = s.f;

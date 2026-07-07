@@ -106,7 +106,7 @@ int main(int argc, char** argv) {
 
                 lbm::initialize_mask(s, bcfg, dec_bench);
                 lbm::initialize_wall_velocity(s, bcfg, dec_bench);
-                lbm::setup_streaming_targets(s, lat, bcfg, dec_bench);
+
                 lbm::init_at_rest(s, lat, bcfg);
 
                 // Baseline mass (post-init, pre-warmup) for the conservation check.
@@ -177,7 +177,7 @@ int main(int argc, char** argv) {
 
             lbm::initialize_mask(s, cfg, dec);
             lbm::initialize_wall_velocity(s, cfg, dec);
-            lbm::setup_streaming_targets(s, lat, cfg, dec);
+
             lbm::init_at_rest(s, lat, cfg);
 
 
@@ -188,8 +188,6 @@ int main(int argc, char** argv) {
 
             for (int step = 0; step <= cfg.N_steps; step++) {
                 lbm::halo_exchange(s, cfg, dec);
-                lbm::compute_density(s, cfg);
-                lbm::compute_velocity(s, lat, cfg);
 
                 if (step % cfg.diag_interval == 0) {
                     auto pre  = lbm::compute_momentum(s, lat, cfg);
