@@ -7,6 +7,7 @@ struct Config {
     int    Ny_local  = 1024 + 2;  // includes top/bottom halos
     int    N_steps   = 5000;
     double tau       = 0.8;
+    double omega = 1.0 / tau;
     double u0        = 0.07;
     double lid_speed = 0.1;
     int    x_start;

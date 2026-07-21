@@ -19,6 +19,7 @@ inline void initialize_mask(SimState& s, const Config& cfg, const Decomp& dec) {
         KOKKOS_LAMBDA(int x_local, int y_local) {
             int x_global = x_start + x_local - 1;
             int y_global = y_start + y_local - 1;
+            // 0 for wall cells and 1 for fluid cells
             mask_loc(x_local, y_local) = (x_global == 0
                                        || x_global == Nx_global - 1
                                        || y_global == 0
@@ -38,7 +39,7 @@ inline void initialize_wall_velocity(SimState& s, const Config& cfg, const Decom
     Kokkos::parallel_for(
         Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0, 0}, {Nx_local + 2, Ny_local + 2}),
         KOKKOS_LAMBDA(int x_local, int y_local) {
-            int y_global = y_start + y_local - 1;
+            int y_global = y_start + y_local - 1; // true global index
             wux(x_local, y_local) = (y_global == Ny_global - 1) ? lid : 0.0;
             wuy(x_local, y_local) = 0.0;
         });

@@ -24,6 +24,12 @@ struct SimState {
     Kokkos::View<double*> recv_top_buf;
     Kokkos::View<double*> recv_bottom_buf;
 
+    // Persistent host staging for MPI — allocated once instead of every exchange
+    Kokkos::View<double*>::host_mirror_type send_left_host, send_right_host;
+    Kokkos::View<double*>::host_mirror_type recv_left_host, recv_right_host;
+    Kokkos::View<double*>::host_mirror_type send_top_host,  send_bottom_host;
+    Kokkos::View<double*>::host_mirror_type recv_top_host,  recv_bottom_host;
+
     explicit SimState(const Config &cfg)
         : f           ("f",           cfg.Nx_local, cfg.Ny_local, 9),
           f_new       ("f_new",       cfg.Nx_local, cfg.Ny_local, 9),
@@ -41,7 +47,16 @@ struct SimState {
           send_bottom_buf("send_b",   cfg.Nx_local * 9),
           recv_top_buf   ("recv_t",   cfg.Nx_local * 9),
           recv_bottom_buf("recv_b",   cfg.Nx_local * 9)
-    {}
+    {
+        send_left_host   = Kokkos::create_mirror_view(send_left_buf);
+        send_right_host  = Kokkos::create_mirror_view(send_right_buf);
+        recv_left_host   = Kokkos::create_mirror_view(recv_left_buf);
+        recv_right_host  = Kokkos::create_mirror_view(recv_right_buf);
+        send_top_host    = Kokkos::create_mirror_view(send_top_buf);
+        send_bottom_host = Kokkos::create_mirror_view(send_bottom_buf);
+        recv_top_host    = Kokkos::create_mirror_view(recv_top_buf);
+        recv_bottom_host = Kokkos::create_mirror_view(recv_bottom_buf);
+    }
 
     void swap_distributions() {
         auto temp = f;

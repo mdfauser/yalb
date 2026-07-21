@@ -56,6 +56,7 @@ FetchContent_MakeAvailable(benchmark)
 # --- Benchmark executable ---
 add_executable(bench gemv_benchmark.cpp)
 target_link_libraries(bench PRIVATE Eigen3::Eigen benchmark::benchmark)
+target_compile_options(bench PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:-Xptxas=-v>)
 
 # --- Main project structure ---
 enable_testing()

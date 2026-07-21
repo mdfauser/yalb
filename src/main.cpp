@@ -25,7 +25,7 @@ Decomp init_decomp(int Nx_global, int Ny_global) {
 
     int dims[2] = {0, 0};
     MPI_Dims_create(d.size, 2, dims);
-    d.px = dims[0];
+    d.px = dims[0]; // number of processors in X-direction
     d.py = dims[1];
 
     d.rank_x = d.rank % d.px;
@@ -86,7 +86,7 @@ int main(int argc, char** argv) {
         // }
 
         if (benchmark_mode) {
-            const int sizes[]  = {1024, 2048, 4096};
+            const int sizes[]  = {64, 256, 512, 1024, 2048, 4096, 8192};
             const int n_warmup = 50;
 
             for (int N : sizes) {
@@ -96,7 +96,7 @@ int main(int argc, char** argv) {
                 bcfg.N_steps = std::max(200, 10000 / (N / 64));
 
                 Decomp dec_bench = init_decomp(N, N);
-                bcfg.Nx_local = dec_bench.Nx_local + 2;
+                bcfg.Nx_local = dec_bench.Nx_local + 2; // add because of ghost cells
                 bcfg.Ny_local = dec_bench.Ny_local + 2;
                 bcfg.x_start  = dec_bench.x_start;
                 bcfg.y_start  = dec_bench.y_start;
@@ -124,7 +124,7 @@ int main(int argc, char** argv) {
                 }
                 Kokkos::fence();
 
-                double post_warmup_mass = lbm::compute_mass(s, bcfg);
+                // double post_warmup_mass = lbm::compute_mass(s, bcfg);
                 // if (dec.rank == 0) {
                 //     std::cout << std::setprecision(15)
                 //               << "[N=" << N << "] post-warmup global mass: "
