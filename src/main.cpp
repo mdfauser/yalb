@@ -78,13 +78,109 @@ int main(int argc, char** argv) {
               << " B=" << dec.bottom_rank << " T=" << dec.top_rank << "\n";
 
     bool benchmark_mode = (argc > 1 && std::string(argv[1]) == "bench");
+    bool shear_wave_mode = (argc > 1 && std::string(argv[1]) == "shear");
+
     Kokkos::initialize(argc, argv);
     {
         // if (dec.rank == 0) {
         //     std::cout << "Backend: " << Kokkos::DefaultExecutionSpace::name() << "\n";
         //     std::cout << "size,Nx,Ny,steps,runtime_s,mlups\n";
         // }
+        if (shear_wave_mode) {
+            Config scfg = cfg;
+            scfg.Nx_global = 128;
+            scfg.Ny_global = 32;
+            scfg.tau = 0.8;
+            scfg.N_steps = 3000;
 
+            Decomp dec_shear = init_decomp(scfg.Nx_global, scfg.Ny_global);
+            scfg.Nx_local = dec_shear.Nx_local;
+            scfg.x_start = dec_shear.x_start;
+
+            Lattice lat;
+            SimState s(scfg);
+
+            // Set mask to all-fluid (no walls)
+            Kokkos::deep_copy(s.mask, 1);
+            // Set wall_ux, wall_uy to 0 (not used, but be safe)
+            Kokkos::deep_copy(s.wall_ux, 0.0);
+            Kokkos::deep_copy(s.wall_uy, 0.0);
+
+            // Initialize f = f_eq with uy = u0*sin(k*x), ux = 0
+            const double u0 = 0.01;
+            const double k = 2.0 * M_PI / scfg.Nx_global;
+
+            auto f = s.f;
+            int Nx_local = dec_shear.Nx_local;
+            int Ny = scfg.Ny_global;
+            int x_start = dec_shear.x_start;
+
+            Kokkos::parallel_for(
+                Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 1}, {Nx_local+1, Ny+1}),
+                KOKKOS_LAMBDA(int x, int y) {
+                    int x_global = x_start + x - 1;
+                    double uy = u0 * sin(k * x_global);
+                    double ux = 0.0;
+                    double rho = 1.0;
+                    double udotu = ux*ux + uy*uy;
+                    for (int q = 0; q < 9; q++) {
+                        double cu = D2Q9::cx(q) * ux + D2Q9::cy(q) * uy;
+                        f(x, y, q) = D2Q9::w(q) * rho * (1.0 + 3.0*cu + 4.5*cu*cu - 1.5*udotu);
+                    }
+                });
+            Kokkos::fence();
+
+            // Time loop with sampling
+            std::ofstream out;
+            if (dec_shear.rank == 0) {
+                out.open("shear_wave.csv");
+                out << "step,amplitude\n";
+            }
+
+            for (int step = 0; step <= scfg.N_steps; step++) {
+                // sample the fundamental mode amplitude every 25 steps
+                if (step % 25 == 0) {
+                    // project uy onto sin(k*x): A = (2/Nx) * sum uy(x) * sin(k*x)
+                    // First compute local sum, then MPI_Allreduce for global
+                    double local_sum = 0.0;
+                    auto f_local = s.f;
+                    int Nx_l = dec_shear.Nx_local;
+                    int Ny_l = scfg.Ny_global;
+                    int x_start_l = dec_shear.x_start;
+                    double k_l = k;
+
+                    Kokkos::parallel_reduce(
+                        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({1, 1}, {Nx_l+1, Ny_l+1}),
+                        KOKKOS_LAMBDA(int x, int y, double& sum) {
+                            int x_global = x_start_l + x - 1;
+                            // uy = sum over q of cy[q]*f[q] / rho
+                            double rho = 0.0, uy = 0.0;
+                            for (int q = 0; q < 9; q++) {
+                                rho += f_local(x, y, q);
+                                uy += D2Q9::cy(q) * f_local(x, y, q);
+                            }
+                            uy /= rho;
+                            sum += uy * sin(k_l * x_global);
+                        }, local_sum);
+
+                    double global_sum;
+                    MPI_Allreduce(&local_sum, &global_sum, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+                    double amplitude = std::abs(2.0 * global_sum / (scfg.Nx_global * Ny));
+
+                    if (dec_shear.rank == 0) {
+                        out << step << "," << std::setprecision(15) << amplitude << "\n";
+                    }
+                }
+
+                lbm::halo_exchange(s, scfg, dec_shear);
+                lbm::collide_stream_bench(s, lat, scfg);
+                s.swap_distributions();
+            }
+
+            if (dec_shear.rank == 0) out.close();
+
+            if (dec_shear.rank == 0) std::cout << "shear_wave.csv written\n";
+        }
         if (benchmark_mode) {
             const int sizes[]  = {64, 256, 512, 1024, 2048, 4096, 8192};
             const int n_warmup = 50;
